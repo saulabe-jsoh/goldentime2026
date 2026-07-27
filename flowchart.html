@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IBS-PAS 실시간 위험도 판단 알고리즘 구조도</title>
+    <!-- Tailwind CSS & FontAwesome CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: #030712;
+            color: #f3f4f6;
+        }
+        
+        .font-mono-code {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Flow Arrow Styling */
+        .flow-line {
+            position: relative;
+        }
+        .flow-line::after {
+            content: '';
+            position: absolute;
+            bottom: -16px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 8px solid #4f46e5;
+        }
+
+        /* Card Hover Animations */
+        .algo-card {
+            transition: all 0.25s ease-in-out;
+        }
+        .algo-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.25);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0b0f19;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #334155;
+        }
+    </style>
+</head>
+<body class="min-h-screen pb-16">
+
+    <!-- Header Banner -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-extrabold text-xl shadow-lg shadow-indigo-500/20">
+                    <i class="fa-solid fa-diagram-project text-white"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight">IBS-PAS AI Engine</h1>
+                    <p class="text-xs text-slate-400">실시간 위험도 판단 & Auto-Zoom 제어 알고리즘 구조도</p>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <span class="px-3 py-1 bg-indigo-500/10 text-indigo-400 text-xs font-semibold rounded-full border border-indigo-500/20 flex items-center gap-1.5">
+                    <i class="fa-solid fa-bolt text-amber-400"></i>
+                    YOLOv11-Pose & EO/IR Hybrid
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 mt-8">
+
+        <!-- Title Section -->
+        <div class="mb-8 text-center max-w-3xl mx-auto">
+            <h2 class="text-2xl md:text-3xl font-extrabold text-white mb-2">
+                엔드투엔드(End-to-End) 파이프라인 알고리즘 순서도
+            </h2>
+            <p class="text-xs md:text-sm text-slate-400">
+                센서 수신 ➔ 픽셀 역산 ➔ 64px Auto-Zoom 피드백 ➔ 비행 각도 분석 ➔ 4단계 위험도 매트릭스 ➔ 클라우드 적재
+            </p>
+        </div>
+
+        <!-- System Core Parameters KPI Cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
+            <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 text-center">
+                <div class="text-[11px] text-slate-400 font-semibold mb-1">임계 픽셀 (AI Minimum)</div>
+                <div class="text-xl font-bold text-indigo-400 font-mono-code">64 px</div>
+                <div class="text-[10px] text-slate-500 mt-1">Pose 추정 최솟값</div>
+            </div>
+            <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 text-center">
+                <div class="text-[11px] text-slate-400 font-semibold mb-1">이/착륙 위험 임계거리</div>
+                <div class="text-xl font-bold text-amber-400 font-mono-code">190 m</div>
+                <div class="text-[10px] text-slate-500 mt-1">조종사 3초 반응 반응선</div>
+            </div>
+            <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 text-center">
+                <div class="text-[11px] text-slate-400 font-semibold mb-1">순항 위험 임계거리</div>
+                <div class="text-xl font-bold text-sky-400 font-mono-code">226 m</div>
+                <div class="text-[10px] text-slate-500 mt-1">고속 순항 충돌선</div>
+            </div>
+            <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-4 text-center">
+                <div class="text-[11px] text-slate-400 font-semibold mb-1">위험 단계 산출 (Risk Levels)</div>
+                <div class="text-xl font-bold text-red-400 font-mono-code">Lv 1 ~ Lv 4</div>
+                <div class="text-[10px] text-slate-500 mt-1">2배 / 3배 / 4배 배수 산정</div>
+            </div>
+        </div>
+
+        <!-- MAIN PIPELINE DIAGRAM (Flow Steps) -->
+        <div class="space-y-6 relative">
+
+            <!-- Step 1: Sensor Ingestion -->
+            <div class="algo-card bg-slate-900 border border-slate-800 rounded-2xl p-6 relative">
+                <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-lg bg-indigo-600 text-white font-bold flex items-center justify-center text-sm">01</span>
+                        <div>
+                            <h3 class="text-base font-bold text-slate-100">센서 데이터 수신 및 메타데이터 파싱 (Data Ingestion)</h3>
+                            <p class="text-xs text-slate-400">EO/IR 비디오 프레임과 KLV 텔레메트리 연동</p>
+                        </div>
+                    </div>
+                    <span class="px-2.5 py-1 bg-slate-800 text-slate-300 text-xs rounded-md font-mono-code">FastAPI Ingest Router</span>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                    <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800/80">
+                        <div class="font-semibold text-indigo-400 mb-1 flex items-center gap-1.5">
+                            <i class="fa-solid fa-video"></i> RTSP/ONVIF 비디오
+                        </div>
+                        <p class="text-slate-400 leading-relaxed">4K UHD ($3840 \times 2160$) 주/야간 EO/IR 프레임 스트림 수신 (30 fps)</p>
+                    </div>
+                    <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800/80">
+                        <div class="font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
+                            <i class="fa-solid fa-satellite text-emerald-400"></i> KLV 텔레메트리
+                        </div>
+                        <p class="text-slate-400 leading-relaxed">현재 수평 화각($H\text{-}FOV$), 줌 배율($1\times \sim 30\times$), Pan/Tilt 각도 파싱</p>
+                    </div>
+                    <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800/80">
+                        <div class="font-semibold text-amber-400 mb-1 flex items-center gap-1.5">
+                            <i class="fa-solid fa-crosshairs"></i> LRF 거리 센서
+                        </div>
+                        <p class="text-slate-400 leading-relaxed">표적까지의 레이저 측정 물리 거리 $D(\text{m})$ 반환 (미장착 시 역산)</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Down Arrow Connector -->
+            <div class="flex justify-center my-2">
+                <i class="fa-solid fa-arrow-down text-indigo-500 text-xl animate-bounce"></i>
+            </div>
+
+            <!-- Step 2: YOLO Detection & Scale Calculation -->
+            <div class="algo-card bg-slate-900 border border-slate-800 rounded-2xl p-6 relative">
+                <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-lg bg-indigo-600 text-white font-bold flex items-center justify-center text-sm">02</span>
+                        <div>
+                            <h3 class="text-base font-bold text-slate-100">YOLOv11 1차 검출 및 픽셀 역산 (Scale Reverse Engineering)</h3>
+                            <p class="text-xs text-slate-400">바운딩 박스 점유 픽셀 크기 $P(\text{px})$ 측정 및 실제 물리 폭 $W(\text{m})$ 계산</p>
+                        </div>
+                    </div>
+                    <span class="px-2.5 py-1 bg-slate-800 text-slate-300 text-xs rounded-md font-mono-code">YOLOv11 Detector</span>
+                </div>
+
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono-code text-xs text-indigo-300 mb-3 overflow-x-auto">
+                    <span class="text-slate-500">// 광학 역산 수식 (4K 3840px 기준)</span><br>
+                    <span class="text-slate-200">Target_Pixel (P) = [ Physical_Width (W) / (2 * Distance (D) * tan(H_FOV / 2)) ] * 3840</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div class="bg-slate-950 p-3 rounded-lg border border-slate-850">
+                        <span class="text-slate-400 block font-semibold mb-0.5">입력 데이터</span>
+                        <span class="text-slate-200">화면 상 객체 바운딩 박스 가로/세로 픽셀 $P$, 카메라 화각 $H\text{-}FOV$</span>
+                    </div>
+                    <div class="bg-slate-950 p-3 rounded-lg border border-slate-850">
+                        <span class="text-slate-400 block font-semibold mb-0.5">출력 산출물</span>
+                        <span class="text-indigo-400 font-semibold">객체 물리적 크기 추정치 $W(\text{m})$ 및 픽셀 점유율</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Down Arrow Connector -->
+            <div class="flex justify-center my-2">
+                <i class="fa-solid fa-arrow-down text-indigo-500 text-xl animate-bounce"></i>
+            </div>
+
+            <!-- Step 3: Decision Branch - 64px Resolution & Auto-Zoom Feedback Loop -->
+            <div class="algo-card bg-slate-900 border-2 border-indigo-500/50 rounded-2xl p-6 relative shadow-lg shadow-indigo-950/50">
+                <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-lg bg-amber-500 text-slate-950 font-extrabold flex items-center justify-center text-sm">03</span>
+                        <div>
+                            <h3 class="text-base font-bold text-amber-300 flex items-center gap-2">
+                                <i class="fa-solid fa-code-branch"></i>
+                                분기 조건판정: 64px 해상도 충족 여부 (Auto-Zoom Loop)
+                            </h3>
+                            <p class="text-xs text-slate-400">Pose 추정 및 종 판별을 위한 최소 이미지 품질 검증</p>
+                        </div>
+                    </div>
+                    <span class="px-2.5 py-1 bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs rounded-md font-mono-code">Decision Loop</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- NO Branch -->
+                    <div class="bg-red-950/20 border border-red-500/30 rounded-xl p-4">
+                        <div class="flex items-center gap-2 font-bold text-red-400 text-sm mb-2">
+                            <i class="fa-solid fa-circle-xmark"></i> NO : P < 64px (해상도 미달)
+                        </div>
+                        <p class="text-xs text-slate-300 leading-relaxed mb-3">
+                            표적이 너무 멀거나 줌이 부족하여 고정밀 Pose 추정이 불가능한 상태입니다.
+                        </p>
+                        <div class="bg-slate-950 p-3 rounded-lg border border-red-500/20 font-mono-code text-[11px] text-red-300">
+                            <strong>[Auto-Zoom 제어 피드백]</strong><br>
+                            ➔ EO/IR 짐벌에 ONVIF/REST API 줌 명령 송신<br>
+                            ➔ <span class="text-amber-400">15배 ➔ 30배 스팟 줌(Pulse Zoom) 구동</span><br>
+                            ➔ 64px 확보 후 Step 04 재진입
+                        </div>
+                    </div>
+
+                    <!-- YES Branch -->
+                    <div class="bg-emerald-950/20 border border-emerald-500/30 rounded-xl p-4">
+                        <div class="flex items-center gap-2 font-bold text-emerald-400 text-sm mb-2">
+                            <i class="fa-solid fa-circle-check"></i> YES : P ≥ 64px (해상도 충족)
+                        </div>
+                        <p class="text-xs text-slate-300 leading-relaxed mb-3">
+                            객체의 날개, 머리, 꼬리 관절(Keypoint) 및 비행 텍스처를 선명하게 식별 가능한 상태입니다.
+                        </p>
+                        <div class="bg-slate-950 p-3 rounded-lg border border-emerald-500/20 font-mono-code text-[11px] text-emerald-300">
+                            <strong>[정밀 파이프라인 승인]</strong><br>
+                            ➔ YOLOv11-Pose 관절 추적 가동<br>
+                            ➔ 비행 각도 ($45^\circ / 90^\circ / 135^\circ$) 벡터 계산 연산 진입
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Down Arrow Connector -->
+            <div class="flex justify-center my-2">
+                <i class="fa-solid fa-arrow-down text-indigo-500 text-xl animate-bounce"></i>
+            </div>
+
+            <!-- Step 4: Pose & Flight Angle Vector Calculation -->
+            <div class="algo-card bg-slate-900 border border-slate-800 rounded-2xl p-6 relative">
+                <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-lg bg-indigo-600 text-white font-bold flex items-center justify-center text-sm">04</span>
+                        <div>
+                            <h3 class="text-base font-bold text-slate-100">YOLOv11-Pose 비행 각도 벡터 연산 & 임계선 설정</h3>
+                            <p class="text-xs text-slate-400">조류의 기동 모션 분석 및 비행 상태별 위험 기준 거리 $T(\text{m})$ 할당</p>
+                        </div>
+                    </div>
+                    <span class="px-2.5 py-1 bg-slate-800 text-slate-300 text-xs rounded-md font-mono-code">YOLOv11-Pose Engine</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <!-- 135 deg -->
+                    <div class="bg-slate-950 p-4 rounded-xl border border-red-500/30 text-center">
+                        <div class="text-red-400 font-bold text-sm mb-1"><i class="fa-solid fa-angles-up"></i> 이륙 / 상승 (135°)</div>
+                        <div class="text-[11px] text-slate-400 mb-2">상승 관성 및 날개 종횡비 &gt; 1.6</div>
+                        <div class="bg-red-500/10 text-red-300 font-mono-code text-xs py-1 px-2 rounded border border-red-500/20 font-bold">
+                            임계거리 $T = 190\text{m}$
+                        </div>
+                        <div class="text-[10px] text-slate-500 mt-1">조종사 3초 회피 반응선</div>
+                    </div>
+
+                    <!-- 90 deg -->
+                    <div class="bg-slate-950 p-4 rounded-xl border border-sky-500/30 text-center">
+                        <div class="text-sky-400 font-bold text-sm mb-1"><i class="fa-solid fa-arrows-left-right"></i> 순항 / 수평 (90°)</div>
+                        <div class="text-[11px] text-slate-400 mb-2">수평 순항 비행 $0.8 \le \text{종횡비} \le 1.6$</div>
+                        <div class="bg-sky-500/10 text-sky-300 font-mono-code text-xs py-1 px-2 rounded border border-sky-500/20 font-bold">
+                            임계거리 $T = 226\text{m}$
+                        </div>
+                        <div class="text-[10px] text-slate-500 mt-1">고속 관제 수평 안전선</div>
+                    </div>
+
+                    <!-- 45 deg -->
+                    <div class="bg-slate-950 p-4 rounded-xl border border-amber-500/30 text-center">
+                        <div class="text-amber-400 font-bold text-sm mb-1"><i class="fa-solid fa-angles-down"></i> 착륙 / 하강 (45°)</div>
+                        <div class="text-[11px] text-slate-400 mb-2">강하 비행 접근 날개 종횡비 &lt; 0.8</div>
+                        <div class="bg-amber-500/10 text-amber-300 font-mono-code text-xs py-1 px-2 rounded border border-amber-500/20 font-bold">
+                            임계거리 $T = 190\text{m}$
+                        </div>
+                        <div class="text-[10px] text-slate-500 mt-1">저고도 이착륙 회피선</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Down Arrow Connector -->
+            <div class="flex justify-center my-2">
+                <i class="fa-solid fa-arrow-down text-indigo-500 text-xl animate-bounce"></i>
+            </div>
+
+            <!-- Step 5: 4-Level Risk Matrix Calculation -->
+            <div class="algo-card bg-slate-900 border border-slate-800 rounded-2xl p-6 relative">
+                <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-lg bg-indigo-600 text-white font-bold flex items-center justify-center text-sm">05</span>
+                        <div>
+                            <h3 class="text-base font-bold text-slate-100">4단계 위험도 산출 연산 (Risk Matrix Evaluation)</h3>
+                            <p class="text-xs text-slate-400">거리 $D$와 임계선 $T$의 배수 비례에 따른 실시간 등급 확정</p>
+                        </div>
+                    </div>
+                    <span class="px-2.5 py-1 bg-slate-800 text-slate-300 text-xs rounded-md font-mono-code">Risk Matrix Engine</span>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                    <!-- Lv 4 -->
+                    <div class="bg-red-950/30 border border-red-500/40 rounded-xl p-3.5">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="font-bold text-red-400">Lv 4 : 위험 (Danger)</span>
+                            <span class="px-1.5 py-0.5 bg-red-500 text-slate-950 font-extrabold text-[10px] rounded animate-pulse">최우선 회피</span>
+                        </div>
+                        <div class="font-mono-code text-red-300 font-bold mb-1">D ≤ T (190m / 226m)</div>
+                        <p class="text-slate-400 text-[11px]">기내/조종석 실시간 활성 경보 발령 (`WARNING_ACTIVE`)</p>
+                    </div>
+
+                    <!-- Lv 3 -->
+                    <div class="bg-orange-950/30 border border-orange-500/40 rounded-xl p-3.5">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="font-bold text-orange-400">Lv 3 : 경고 (Warning)</span>
+                            <span class="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 text-[10px] font-bold rounded">2배수 영역</span>
+                        </div>
+                        <div class="font-mono-code text-orange-300 font-bold mb-1">T < D ≤ 2T (380m / 452m)</div>
+                        <p class="text-slate-400 text-[11px]">주의 깊은 관제 및 추적 모드 전환, 자동 줌 가동</p>
+                    </div>
+
+                    <!-- Lv 2 -->
+                    <div class="bg-amber-950/30 border border-amber-500/40 rounded-xl p-3.5">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="font-bold text-amber-400">Lv 2 : 주의 (Caution)</span>
+                            <span class="px-1.5 py-0.5 bg-amber-500/20 text-amber-400 text-[10px] font-bold rounded">3배수 영역</span>
+                        </div>
+                        <div class="font-mono-code text-amber-300 font-bold mb-1">2T < D ≤ 3T (570m / 678m)</div>
+                        <p class="text-slate-400 text-[11px]">초기 모션 감지 및 가상 뷰파인더 락온 상태 유지</p>
+                    </div>
+
+                    <!-- Lv 1 -->
+                    <div class="bg-emerald-950/30 border border-emerald-500/40 rounded-xl p-3.5">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="font-bold text-emerald-400">Lv 1 : 보통 (Normal)</span>
+                            <span class="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded">4배수 / 원거리</span>
+                        </div>
+                        <div class="font-mono-code text-emerald-300 font-bold mb-1">D > 3T (또는 > 760m)</div>
+                        <p class="text-slate-400 text-[11px]">안전 상태 (`STABLE`), 광각 기본 스캔 모드 유지</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Down Arrow Connector -->
+            <div class="flex justify-center my-2">
+                <i class="fa-solid fa-arrow-down text-indigo-500 text-xl animate-bounce"></i>
+            </div>
+
+            <!-- Step 6: Streamlit HUD Display & Google Cloud Storage -->
+            <div class="algo-card bg-slate-900 border border-slate-800 rounded-2xl p-6 relative">
+                <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-lg bg-indigo-600 text-white font-bold flex items-center justify-center text-sm">06</span>
+                        <div>
+                            <h3 class="text-base font-bold text-slate-100">실시간 대시보드 표출 & 구글 인프라 적재 (Output & Logging)</h3>
+                            <p class="text-xs text-slate-400">Streamlit UI 시각화 및 Google Sheets/Drive 이벤트 비동기 영구 보관</p>
+                        </div>
+                    </div>
+                    <span class="px-2.5 py-1 bg-slate-800 text-slate-300 text-xs rounded-md font-mono-code">Streamlit & Google API</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                        <div class="font-bold text-indigo-400 mb-2 flex items-center gap-2">
+                            <i class="fa-solid fa-desktop"></i> Streamlit Real-Time Dashboard (Port 8501)
+                        </div>
+                        <ul class="space-y-1.5 text-slate-300 text-[11px]">
+                            <li>• EO/IR 영상 상단 HUD 오버레이 (바운딩 박스, 거리, 픽셀 크기, 비행각도)</li>
+                            <li>• Lv1~Lv4 실시간 위험도 게이지 및 경보 팝업 출력</li>
+                            <li>• 수동 PTZ / Auto-Zoom 제어 오버라이드 인터페이스 제공</li>
+                        </ul>
+                    </div>
+
+                    <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                        <div class="font-bold text-emerald-400 mb-2 flex items-center gap-2">
+                            <i class="fa-brands fa-google"></i> Google Cloud Persistence Layer
+                        </div>
+                        <ul class="space-y-1.5 text-slate-300 text-[11px]">
+                            <li>• <strong>Google Sheets DB</strong>: Lv3/Lv4 발생 시 이벤트 텔레메트리 로그 비동기 적재</li>
+                            <li>• <strong>Google Drive</strong>: 위험(Lv4) 감지 순간의 바운딩 박스 캡처 프레임(.png) 보관</li>
+                            <li>• <strong>localtunnel</strong>: 외부 조종사/관제실 퍼블릭 접속 URL 자동 개방</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Interactive Formula Calculator Simulator Section -->
+        <div class="mt-12 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
+            <h3 class="text-base font-bold text-white mb-1 flex items-center gap-2">
+                <i class="fa-solid fa-calculator text-indigo-400"></i>
+                알고리즘 수식 실시간 시뮬레이터 (Interactive Calculator)
+            </h3>
+            <p class="text-xs text-slate-400 mb-6">
+                실제 조류 크기, 거리, 화각을 조절하여 픽셀 수($P$) 및 위험도 등급이 어떻게 실시간 산출되는지 테스트해보세요.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <!-- Target Physical Size W -->
+                <div>
+                    <label class="text-xs text-slate-400 font-semibold block mb-2">① 표적 실제 날개폭/크기 $W(\text{m})$</label>
+                    <select id="simSizeInput" onchange="runSimulation()" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 font-mono focus:border-indigo-500 focus:outline-none">
+                        <option value="0.3">소형 조류 (참새/비둘기: 0.3m)</option>
+                        <option value="0.6">중형 조류/소형드론 (황조롱이/오리: 0.6m)</option>
+                        <option value="1.0" selected>대형 조류/중형드론 (기러기/독수리: 1.0m)</option>
+                    </select>
+                </div>
+
+                <!-- Camera Distance D -->
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-xs text-slate-400 font-semibold">② 표적 측정 거리 $D(\text{m})$</label>
+                        <span id="simDistVal" class="text-xs text-indigo-400 font-mono font-bold">250 m</span>
+                    </div>
+                    <input type="range" id="simDistInput" min="50" max="1000" step="10" value="250" oninput="runSimulation()" class="w-full h-2 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-indigo-500 border border-slate-800">
+                </div>
+
+                <!-- Flight Angle & FOV -->
+                <div>
+                    <label class="text-xs text-slate-400 font-semibold block mb-2">③ 비행 각도 및 카메라 줌 상태</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <select id="simAngleInput" onchange="runSimulation()" class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-2 text-xs text-slate-100 font-mono focus:outline-none">
+                            <option value="135">이륙 (135°)</option>
+                            <option value="90" selected>순항 (90°)</option>
+                            <option value="45">착륙 (45°)</option>
+                        </select>
+                        <select id="simFovInput" onchange="runSimulation()" class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-2 text-xs text-slate-100 font-mono focus:outline-none">
+                            <option value="60">1배 줌 (60° 광각)</option>
+                            <option value="4" selected>15배 줌 (4° 망원)</option>
+                            <option value="2">30배 줌 (2° 초망원)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Simulation Output Banner -->
+            <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                <div class="text-center md:text-left">
+                    <span class="text-[11px] text-slate-500 block font-semibold">계산된 표적 점유 픽셀</span>
+                    <span id="calcPxResult" class="text-2xl font-extrabold text-indigo-400 font-mono-code">110 px</span>
+                    <span id="pixelStatusBadge" class="ml-2 text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">64px 이상 (충족)</span>
+                </div>
+                <div class="text-center md:text-left">
+                    <span class="text-[11px] text-slate-500 block font-semibold">적용 위험 임계거리 ($T$)</span>
+                    <span id="calcThreshResult" class="text-lg font-bold text-slate-200 font-mono-code">226 m</span>
+                </div>
+                <div class="text-center md:text-right">
+                    <span class="text-[11px] text-slate-500 block font-semibold mb-1">최종 산출 위험 등급</span>
+                    <span id="calcRiskResult" class="inline-block px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 font-extrabold text-sm rounded-full animate-pulse">
+                        LEVEL 4 : 위험 (Danger)
+                    </span>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Simulation Script Logic -->
+    <script>
+        function runSimulation() {
+            const W = parseFloat(document.getElementById('simSizeInput').value);
+            const D = parseFloat(document.getElementById('simDistInput').value);
+            const angle = parseInt(document.getElementById('simAngleInput').value);
+            const FOV_deg = parseFloat(document.getElementById('simFovInput').value);
+
+            document.getElementById('simDistVal').innerText = `${D} m`;
+
+            // 4K (3840px) 픽셀 계산 수식
+            const FOV_rad = (FOV_deg * Math.PI) / 180;
+            const sceneWidth = 2 * D * Math.tan(FOV_rad / 2);
+            const calculatedPx = Math.round((W / sceneWidth) * 3840);
+
+            // 픽셀 출력 반영
+            document.getElementById('calcPxResult').innerText = `${calculatedPx} px`;
+
+            const pxBadge = document.getElementById('pixelStatusBadge');
+            if (calculatedPx >= 64) {
+                pxBadge.className = "ml-2 text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                pxBadge.innerText = "64px 이상 (Pose 추정 충족)";
+            } else {
+                pxBadge.className = "ml-2 text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30";
+                pxBadge.innerText = "64px 미달 (Auto-Zoom 필요)";
+            }
+
+            // 비행 각도별 위험 임계거리 T 결정
+            let T = 226; // 순항 기본 226m
+            if (angle === 135 || angle === 45) {
+                T = 190; // 이착륙 190m
+            }
+            document.getElementById('calcThreshResult').innerText = `${T} m`;
+
+            // 4단계 위험 매트릭스 계산
+            let riskLevel = 1;
+            let riskText = "LEVEL 1 : 보통 (Normal)";
+            let riskClass = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+
+            if (D <= T) {
+                riskLevel = 4;
+                riskText = "LEVEL 4 : 위험 (Danger)";
+                riskClass = "bg-red-500/20 text-red-400 border-red-500/30 animate-pulse";
+            } else if (D <= T * 2) {
+                riskLevel = 3;
+                riskText = "LEVEL 3 : 경고 (Warning)";
+                riskClass = "bg-orange-500/20 text-orange-400 border-orange-500/30";
+            } else if (D <= T * 3) {
+                riskLevel = 2;
+                riskText = "LEVEL 2 : 주의 (Caution)";
+                riskClass = "bg-amber-500/20 text-amber-400 border-amber-500/30";
+            }
+
+            const riskBadge = document.getElementById('calcRiskResult');
+            riskBadge.innerText = riskText;
+            riskBadge.className = `inline-block px-3 py-1 font-extrabold text-sm rounded-full border ${riskClass}`;
+        }
+
+        // 최초 시뮬레이션 실행
+        runSimulation();
+    </script>
+</body>
+</html>
