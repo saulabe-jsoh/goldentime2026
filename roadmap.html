@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phase 1: Bird Detection Flowchart</title>
+    <!-- Tailwind CSS & FontAwesome -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: #0b0f19;
+            color: #f1f5f9;
+        }
+        
+        .font-mono-code {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Card Hover Animations */
+        .step-card {
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        .step-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.5);
+        }
+        
+        /* Connection Line */
+        .connection-line {
+            width: 2px;
+            background: linear-gradient(to bottom, #4f46e5, #06b6d4);
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 0;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="min-h-screen pb-20">
+
+    <!-- Header -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-cyan-500 rounded-xl flex items-center justify-center font-extrabold text-xl shadow-lg shadow-indigo-500/20">
+                    <i class="fa-solid fa-microchip text-white"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight text-white">IBS-PAS Research Roadmap</h1>
+                    <p class="text-xs text-slate-400">Phase 1: 실시간 조류 탐지(Bird Detection) 파이프라인</p>
+                </div>
+            </div>
+            <span class="px-3 py-1 bg-indigo-500/10 text-indigo-400 text-xs font-semibold rounded-full border border-indigo-500/20">
+                실무 구현 플로우차트
+            </span>
+        </div>
+    </header>
+
+    <main class="max-w-3xl mx-auto px-6 mt-12 relative">
+        
+        <div class="text-center mb-12">
+            <h2 class="text-3xl font-extrabold text-white mb-3">Bird Detection AI Pipeline</h2>
+            <p class="text-sm text-slate-400">연산 지연 최소화 및 몸통(Torso) 중심 바운딩 박스를 통한 실시간 객체 탐지 알고리즘 구축</p>
+        </div>
+
+        <!-- Timeline Container -->
+        <div class="relative w-full">
+            
+            <!-- Background Line -->
+            <div class="absolute left-8 md:left-1/2 top-0 bottom-0 w-1 bg-slate-800 -translate-x-1/2 z-0"></div>
+
+            <!-- STEP 1: Data Preparation -->
+            <div class="relative z-10 flex flex-col md:flex-row items-center mb-12 group">
+                <div class="hidden md:flex w-1/2 justify-end pr-8">
+                    <div class="text-right">
+                        <h3 class="text-indigo-400 font-bold text-lg">데이터 수집 & 증강</h3>
+                        <p class="text-xs text-slate-400 mt-1">Data Collection & Augmentation</p>
+                    </div>
+                </div>
+                <div class="w-16 h-16 rounded-full bg-slate-900 border-4 border-indigo-500 flex items-center justify-center text-indigo-400 font-bold text-xl shadow-[0_0_15px_rgba(99,102,241,0.3)] shrink-0 z-10">
+                    01
+                </div>
+                <div class="w-full md:w-1/2 pl-8 md:pl-8 mt-4 md:mt-0">
+                    <div class="step-card bg-slate-900 border border-indigo-500/30 rounded-2xl p-5 shadow-lg shadow-indigo-900/20">
+                        <h4 class="font-bold text-white mb-2 flex items-center gap-2">
+                            <i class="fa-solid fa-database text-indigo-400"></i> 환경 적응형 데이터셋 구축
+                        </h4>
+                        <ul class="text-xs text-slate-300 space-y-2">
+                            <li class="flex gap-2"><i class="fa-solid fa-check text-indigo-500 mt-0.5"></i> <span>공항/관제탑 인근 실제 촬영 영상 프레임 추출</span></li>
+                            <li class="flex gap-2"><i class="fa-solid fa-check text-indigo-500 mt-0.5"></i> <span>가시광선(EO) 및 열화상(IR) 데이터 혼합 구성</span></li>
+                            <li class="flex gap-2"><i class="fa-solid fa-check text-indigo-500 mt-0.5"></i> <span><strong>데이터 증강:</strong> Motion Blur, Haze(안개), 소형 객체 합성(Copy-Paste) 적용</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: Labeling Strategy (Core Task) -->
+            <div class="relative z-10 flex flex-col md:flex-row-reverse items-center mb-12 group">
+                <div class="hidden md:flex w-1/2 justify-start pl-8">
+                    <div class="text-left">
+                        <h3 class="text-amber-400 font-bold text-lg">분류 및 정밀 라벨링</h3>
+                        <p class="text-xs text-slate-400 mt-1">Classification & BBox Labeling</p>
+                    </div>
+                </div>
+                <div class="w-16 h-16 rounded-full bg-slate-900 border-4 border-amber-500 flex items-center justify-center text-amber-400 font-bold text-xl shadow-[0_0_15px_rgba(245,158,11,0.3)] shrink-0 z-10">
+                    02
+                </div>
+                <div class="w-full md:w-1/2 pr-8 md:pr-8 pl-8 md:pl-0 mt-4 md:mt-0">
+                    <div class="step-card bg-amber-950/20 border border-amber-500/40 rounded-2xl p-5 shadow-lg shadow-amber-900/20">
+                        <h4 class="font-bold text-white mb-2 flex items-center gap-2">
+                            <i class="fa-solid fa-tag text-amber-400"></i> 클래스 정의 및 몸통 중심 제약
+                        </h4>
+                        <div class="space-y-3">
+                            <div class="grid grid-cols-3 gap-2 text-[10px] text-center font-bold">
+                                <div class="bg-slate-800 p-1.5 rounded text-slate-300 border border-slate-700">소형<br>(< 300g)</div>
+                                <div class="bg-slate-800 p-1.5 rounded text-slate-300 border border-slate-700">중형<br>(~ 1kg)</div>
+                                <div class="bg-slate-800 p-1.5 rounded text-slate-300 border border-slate-700">대형<br>(> 1kg)</div>
+                            </div>
+                            <div class="bg-amber-500/10 border border-amber-500/30 p-2.5 rounded-lg">
+                                <p class="text-xs text-amber-200 font-semibold mb-1"><i class="fa-solid fa-triangle-exclamation"></i> 핵심 과제: BBox 핑퐁 억제</p>
+                                <p class="text-[11px] text-amber-100/70 leading-relaxed">날개 끝부분을 제외한 <strong>"메인 몸통(Torso)"</strong>만을 감싸도록 타이트하게 BBox를 라벨링하여, 날갯짓에 따른 거리 계산(픽셀 역산) 오차를 원천 차단.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 3: Model Selection & Training -->
+            <div class="relative z-10 flex flex-col md:flex-row items-center mb-12 group">
+                <div class="hidden md:flex w-1/2 justify-end pr-8">
+                    <div class="text-right">
+                        <h3 class="text-cyan-400 font-bold text-lg">YOLO 모델 학습</h3>
+                        <p class="text-xs text-slate-400 mt-1">Model Selection & Training</p>
+                    </div>
+                </div>
+                <div class="w-16 h-16 rounded-full bg-slate-900 border-4 border-cyan-500 flex items-center justify-center text-cyan-400 font-bold text-xl shadow-[0_0_15px_rgba(6,182,212,0.3)] shrink-0 z-10">
+                    03
+                </div>
+                <div class="w-full md:w-1/2 pl-8 md:pl-8 mt-4 md:mt-0">
+                    <div class="step-card bg-slate-900 border border-cyan-500/30 rounded-2xl p-5 shadow-lg shadow-cyan-900/20">
+                        <h4 class="font-bold text-white mb-2 flex items-center gap-2">
+                            <i class="fa-solid fa-brain text-cyan-400"></i> YOLOv11 Base 학습
+                        </h4>
+                        <ul class="text-xs text-slate-300 space-y-2">
+                            <li class="flex gap-2"><i class="fa-solid fa-angle-right text-cyan-500 mt-0.5"></i> <span><strong>모델:</strong> YOLOv11-Nano / Small (Real-time 최우선)</span></li>
+                            <li class="flex gap-2"><i class="fa-solid fa-angle-right text-cyan-500 mt-0.5"></i> <span><strong>SAHI 적용 검토:</strong> 고해상도 4K 이미지를 Slicing하여 원거리(500m) 소형 객체 검출률 향상</span></li>
+                            <li class="flex gap-2"><i class="fa-solid fa-angle-right text-cyan-500 mt-0.5"></i> <span><strong>학습 파라미터:</strong> Hard Negative 마이닝을 통한 배경(나뭇잎 등) 오탐 방지</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 4: Optimization & Performance -->
+            <div class="relative z-10 flex flex-col md:flex-row-reverse items-center mb-12 group">
+                <div class="hidden md:flex w-1/2 justify-start pl-8">
+                    <div class="text-left">
+                        <h3 class="text-emerald-400 font-bold text-lg">최적화 및 성능 평가</h3>
+                        <p class="text-xs text-slate-400 mt-1">Optimization & Metrics</p>
+                    </div>
+                </div>
+                <div class="w-16 h-16 rounded-full bg-slate-900 border-4 border-emerald-500 flex items-center justify-center text-emerald-400 font-bold text-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] shrink-0 z-10">
+                    04
+                </div>
+                <div class="w-full md:w-1/2 pr-8 md:pr-8 pl-8 md:pl-0 mt-4 md:mt-0">
+                    <div class="step-card bg-emerald-950/20 border border-emerald-500/40 rounded-2xl p-5 shadow-lg shadow-emerald-900/20">
+                        <h4 class="font-bold text-white mb-2 flex items-center gap-2">
+                            <i class="fa-solid fa-gauge-high text-emerald-400"></i> Real-time 지연 최소화
+                        </h4>
+                        <div class="grid grid-cols-2 gap-2 mb-3">
+                            <div class="bg-slate-950 p-2 rounded border border-emerald-500/20 text-center">
+                                <span class="block text-[10px] text-slate-400">Target FPS</span>
+                                <span class="font-mono-code text-emerald-400 font-bold text-sm">> 30 FPS</span>
+                            </div>
+                            <div class="bg-slate-950 p-2 rounded border border-emerald-500/20 text-center">
+                                <span class="block text-[10px] text-slate-400">Target mAP_S</span>
+                                <span class="font-mono-code text-emerald-400 font-bold text-sm">> 0.70</span>
+                            </div>
+                        </div>
+                        <p class="text-[11px] text-slate-300">
+                            TensorRT 엔진(<code>.engine</code>) 변환을 통해 GPU 추론 Latency를 15ms 이하로 억제. mAP50-95 및 소형객체 지표(mAP_S) 중점 평가.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 5: Output Interface (To Phase 2) -->
+            <div class="relative z-10 flex flex-col md:flex-row items-center group">
+                <div class="hidden md:flex w-1/2 justify-end pr-8">
+                    <div class="text-right">
+                        <h3 class="text-purple-400 font-bold text-lg">출력 인터페이스</h3>
+                        <p class="text-xs text-slate-400 mt-1">Output Payload (To Phase 2)</p>
+                    </div>
+                </div>
+                <div class="w-16 h-16 rounded-full bg-slate-900 border-4 border-purple-500 flex items-center justify-center text-purple-400 font-bold text-xl shadow-[0_0_15px_rgba(168,85,247,0.3)] shrink-0 z-10">
+                    05
+                </div>
+                <div class="w-full md:w-1/2 pl-8 md:pl-8 mt-4 md:mt-0">
+                    <div class="step-card bg-slate-900 border border-purple-500/30 rounded-2xl p-5 shadow-lg shadow-purple-900/20">
+                        <h4 class="font-bold text-white mb-2 flex items-center gap-2">
+                            <i class="fa-solid fa-file-code text-purple-400"></i> Phase 2 연계 Payload
+                        </h4>
+                        <p class="text-xs text-slate-300 mb-2">
+                            거리 계산 및 위험도 판단(Phase 2) 모듈로 전달할 정밀 몸통 픽셀 <code>[w, h]</code> 값 JSON 반환.
+                        </p>
+                        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 font-mono-code text-[10px] text-purple-300">
+<pre class="m-0">
+[
+  {
+    "id": 1,
+    "class": "bird_medium",
+    "bbox": [x, y, w, h], // Torso base
+    "confidence": 0.95
+  }
+]
+</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+</body>
+</html>
+
