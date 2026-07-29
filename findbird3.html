@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>IBS-PAS (ONNX Runtime Web Edge Vision)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <style>
+        body { font-family: 'Pretendard', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        #video-container { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; overflow: hidden; border-radius: 0.5rem; border: 1px solid #334155; }
+        video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; z-index: 10; pointer-events: none; }
+        .log-panel::-webkit-scrollbar { width: 6px; }
+        .log-panel::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col p-6 items-center">
+
+    <div class="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <div class="lg:col-span-2 space-y-4">
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
+                <div>
+                    <h1 class="font-bold text-xl text-indigo-400">YOLOv11 ONNX Edge Client</h1>
+                    <p class="text-xs text-slate-400">서버 통신 없이 브라우저 내장 WebGL/WASM으로 추론</p>
+                </div>
+                <div id="model-status" class="px-4 py-2 bg-amber-500/10 text-amber-400 text-sm font-bold rounded-full border border-amber-500/20">
+                    모델 로딩 중...
+                </div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-wrap gap-4 items-end">
+                <div class="flex-grow">
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">영상 파일 업로드 (.mp4)</label>
+                    <input type="file" id="video-upload" accept="video/mp4" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700 bg-slate-950 border border-slate-700 rounded-md">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">EO/IR 광학 배율 설정</label>
+                    <select id="zoom-level" class="block w-full px-4 py-2 bg-slate-950 border border-slate-700 rounded-md text-sm text-white focus:outline-none">
+                        <option value="15">15배 줌 (x15)</option>
+                        <option value="30">30배 줌 (x30)</option>
+                    </select>
+                </div>
+                <button id="btn-analyze" disabled class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-md disabled:opacity-50">분석 시작</button>
+            </div>
+
+            <div id="video-container">
+                <video id="video" playsinline muted></video>
+                <canvas id="canvas"></canvas>
+            </div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-xl flex flex-col h-full overflow-hidden">
+            <div class="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
+                <h2 class="text-sm font-bold text-slate-200">
+                    <i class="fa-solid fa-microchip text-indigo-400"></i> 실시간 연산 로그 (Telemetry)
+                </h2>
+            </div>
+            <div class="grid grid-cols-2 gap-2 p-4 border-b border-slate-800 bg-slate-900 text-center">
+                <div class="bg-slate-950 p-2 rounded border border-slate-800">
+                    <div class="text-[10px] text-slate-400">Inference (추론)</div>
+                    <div id="metric-infer" class="font-mono text-sm font-bold text-indigo-400">0 ms</div>
+                </div>
+                <div class="bg-slate-950 p-2 rounded border border-slate-800">
+                    <div class="text-[10px] text-slate-400">Post-process (후처리)</div>
+                    <div id="metric-post" class="font-mono text-sm font-bold text-amber-400">0 ms</div>
+                </div>
+                <div class="bg-slate-950 p-2 rounded border border-slate-800">
+                    <div class="text-[10px] text-slate-400">Total FPS</div>
+                    <div id="metric-fps" class="font-mono text-sm font-bold text-emerald-400">0</div>
+                </div>
+                <div class="bg-slate-950 p-2 rounded border border-slate-800">
+                    <div class="text-[10px] text-slate-400">탐지 객체</div>
+                    <div id="metric-birds" class="font-mono text-sm font-bold text-rose-400">0 마리</div>
+                </div>
+            </div>
+            <pre id="sys-log" class="log-panel p-4 overflow-y-auto text-xs font-mono text-slate-300 h-[400px] leading-relaxed"></pre>
+        </div>
+    </div>
+
+    <script>
+        // 모델 설정 상수
+        const MODEL_PATH = './yolo11n.onnx'; // ONNX 파일 경로
+        const CONFIDENCE_THRESHOLD = 0.25;
+        const IOU_THRESHOLD = 0.45;
+        const TARGET_SIZE = 640;
+        const BIRD_CLASS_INDEX = 14; // COCO Dataset 기준 Bird 인덱스
+
+        let session;
+        let isAnalyzing = false;
+        let lastTime = 0;
+
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const btnAnalyze = document.getElementById('btn-analyze');
+        const zoomSelect = document.getElementById('zoom-level');
+        const sysLog = document.getElementById('sys-log');
+
+        // 전처리용 숨겨진 캔버스
+        const prepCanvas = document.createElement('canvas');
+        prepCanvas.width = TARGET_SIZE;
+        prepCanvas.height = TARGET_SIZE;
+        const prepCtx = prepCanvas.getContext('2d');
+
+        function appendLog(msg, type="INFO") {
+            const time = new Date().toISOString().split('T')[1].slice(0, 12);
+            let color = "text-slate-300";
+            if(type === "WARN") color = "text-amber-400";
+            if(type === "ERROR") color = "text-red-400";
+            if(type === "PERF") color = "text-indigo-300";
+            
+            const logLine = `<span class="text-slate-500">[${time}]</span> <span class="${color}">${msg}</span>\n`;
+            sysLog.innerHTML = logLine + sysLog.innerHTML.substring(0, 5000);
+        }
+
+        // 1. ONNX Runtime 세션 초기화
+        async function loadModel() {
+            try {
+                appendLog("ONNX Runtime WebGL 백엔드 로드 시도 중...", "INFO");
+                // WebGL 가속을 사용하여 브라우저 GPU 자원 활용
+                session = await ort.InferenceSession.create(MODEL_PATH, { executionProviders: ['webgl', 'wasm'] });
+                
+                document.getElementById('model-status').textContent = "모델 준비 완료";
+                document.getElementById('model-status').className = "px-4 py-2 bg-emerald-500/10 text-emerald-400 text-sm font-bold rounded-full border border-emerald-500/20";
+                appendLog("YOLOv11 ONNX 모델 로딩 성공", "INFO");
+                
+                if (video.src) btnAnalyze.disabled = false;
+            } catch (e) {
+                appendLog(`모델 로드 실패: ${e.message}`, "ERROR");
+                document.getElementById('model-status').textContent = "모델 로드 실패";
+            }
+        }
+        loadModel();
+
+        // 2. 비디오 제어
+        document.getElementById('video-upload').addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                video.src = URL.createObjectURL(e.target.files[0]);
+                video.load();
+                video.onloadeddata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    if (session) btnAnalyze.disabled = false;
+                    appendLog(`비디오 로드됨 (해상도: ${video.videoWidth}x${video.videoHeight})`);
+                };
+            }
+        });
+
+        btnAnalyze.addEventListener('click', () => {
+            if (isAnalyzing) {
+                isAnalyzing = false;
+                video.pause();
+                btnAnalyze.textContent = "분석 시작";
+                btnAnalyze.className = "px-6 py-2 bg-emerald-600 text-white text-sm font-bold rounded-md";
+                appendLog("분석 중지됨");
+            } else {
+                isAnalyzing = true;
+                video.play();
+                btnAnalyze.textContent = "분석 중지";
+                btnAnalyze.className = "px-6 py-2 bg-red-600 text-white text-sm font-bold rounded-md";
+                appendLog("분석 시작됨");
+                lastTime = performance.now();
+                runInferenceLoop();
+            }
+        });
+
+        // 3. 메인 분석 루프
+        async function runInferenceLoop() {
+            if (!isAnalyzing || video.paused || video.ended) return;
+
+            const t0 = performance.now(); // 전체 사이클 시작
+
+            // [A] Pre-processing (전처리: 640x640 리사이즈 및 텐서 변환)
+            prepCtx.drawImage(video, 0, 0, TARGET_SIZE, TARGET_SIZE);
+            const imgData = prepCtx.getImageData(0, 0, TARGET_SIZE, TARGET_SIZE).data;
+            
+            // Float32Array [1, 3, 640, 640] 구조로 변환 및 정규화 (/255.0)
+            const inputBuffer = new Float32Array(1 * 3 * TARGET_SIZE * TARGET_SIZE);
+            for (let i = 0; i < TARGET_SIZE * TARGET_SIZE; i++) {
+                inputBuffer[i] = imgData[i * 4] / 255.0;                         // R
+                inputBuffer[TARGET_SIZE * TARGET_SIZE + i] = imgData[i * 4 + 1] / 255.0;     // G
+                inputBuffer[TARGET_SIZE * TARGET_SIZE * 2 + i] = imgData[i * 4 + 2] / 255.0; // B
+            }
+            const tensor = new ort.Tensor('float32', inputBuffer, [1, 3, TARGET_SIZE, TARGET_SIZE]);
+            const t1 = performance.now();
+
+            // [B] Inference (추론)
+            const feeds = {};
+            feeds[session.inputNames[0]] = tensor;
+            const output = await session.run(feeds);
+            const t2 = performance.now();
+
+            // [C] Post-processing (후처리: 텐서 파싱 및 NMS)
+            const outputData = output[session.outputNames[0]].data;
+            // YOLOv11 ONNX 표준 출력 형태: [1, 84, 8400]
+            // 행(row): 0=cx, 1=cy, 2=w, 3=h, 4~83=class scores
+            const boxes = [];
+            const numAnchors = 8400;
+            const classRowOffset = 4 + BIRD_CLASS_INDEX; // Bird 클래스는 18번째 행 (4+14)
+
+            for (let i = 0; i < numAnchors; i++) {
+                const score = outputData[classRowOffset * numAnchors + i];
+                if (score > CONFIDENCE_THRESHOLD) {
+                    const cx = outputData[0 * numAnchors + i];
+                    const cy = outputData[1 * numAnchors + i];
+                    const w = outputData[2 * numAnchors + i];
+                    const h = outputData[3 * numAnchors + i];
+                    
+                    // x1, y1, x2, y2 변환 (640 픽셀 기준)
+                    boxes.push({
+                        x1: cx - w / 2, y1: cy - h / 2, 
+                        x2: cx + w / 2, y2: cy + h / 2,
+                        w: w, h: h, score: score
+                    });
+                }
+            }
+
+            // Non-Maximum Suppression (NMS) 알고리즘 적용
+            const finalDetections = applyNMS(boxes, IOU_THRESHOLD);
+            const t3 = performance.now();
+
+            // [D] 렌더링 및 거리 역산
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const scaleX = canvas.width / TARGET_SIZE;
+            const scaleY = canvas.height / TARGET_SIZE;
+            
+            const currentZoom = parseInt(zoomSelect.value); // 사용자 선택 줌 (15 또는 30)
+
+            finalDetections.forEach(det => {
+                // 원본 해상도(비디오) 크기로 좌표 스케일링
+                const rx = det.x1 * scaleX;
+                const ry = det.y1 * scaleY;
+                const rw = det.w * scaleX;
+                const rh = det.h * scaleY;
+                
+                // --- 광학 줌 기반 거리 역산 수식 ---
+                // 기준: 15x 줌에서 100px 크기의 객체가 500m 거리에 해당함.
+                // 거리(D) = 500 * (100 / 표적픽셀) * (현재줌 / 15)
+                const targetPixelSize = Math.max(rw, rh); // 객체의 가장 긴 축을 기준으로 산정
+                const distanceMeters = 500 * (100 / targetPixelSize) * (currentZoom / 15);
+                const distanceFormatted = distanceMeters.toFixed(1);
+
+                // 바운딩 박스 그리기
+                ctx.strokeStyle = "#3b82f6";
+                ctx.lineWidth = 3;
+                ctx.strokeRect(rx, ry, rw, rh);
+
+                // 라벨 및 거리 그리기
+                const label = `Bird (${Math.round(det.score*100)}%) | Dist: ${distanceFormatted}m`;
+                ctx.fillStyle = "#3b82f6";
+                ctx.fillRect(rx, ry - 25, ctx.measureText(label).width + 10, 25);
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 14px Pretendard";
+                ctx.fillText(label, rx + 5, ry - 7);
+            });
+
+            // [E] 성능 지표(Telemetry) 업데이트
+            const prepTime = t1 - t0;
+            const inferTime = t2 - t1;
+            const postTime = t3 - t2;
+            const cycleTime = t3 - t0;
+            const fps = 1000 / cycleTime;
+
+            document.getElementById('metric-infer').innerText = `${inferTime.toFixed(1)} ms`;
+            document.getElementById('metric-post').innerText = `${postTime.toFixed(1)} ms`;
+            document.getElementById('metric-fps').innerText = fps.toFixed(1);
+            document.getElementById('metric-birds').innerText = `${finalDetections.length} 마리`;
+
+            // 매 1초(약 30프레임) 단위로 상세 로그 기록
+            if (frameCount % 30 === 0) {
+                appendLog(`[연산] Pre:${prepTime.toFixed(1)}ms | Infer:${inferTime.toFixed(1)}ms | Post:${postTime.toFixed(1)}ms`, "PERF");
+                if (finalDetections.length > 0) {
+                    appendLog(`[탐지] 조류 ${finalDetections.length}객체. 현재 배율: x${currentZoom}`);
+                }
+            }
+            frameCount++;
+
+            requestAnimationFrame(runInferenceLoop);
+        }
+
+        let frameCount = 0;
+
+        // --- NMS (Non-Maximum Suppression) 자바스크립트 구현체 ---
+        function applyNMS(boxes, iouThreshold) {
+            // 점수 내림차순 정렬
+            boxes.sort((a, b) => b.score - a.score);
+            const result = [];
+            
+            while (boxes.length > 0) {
+                const bestBox = boxes.shift();
+                result.push(bestBox);
+                
+                // 나머지 박스들과의 IoU를 계산하여 겹치는 박스 제거
+                for (let i = boxes.length - 1; i >= 0; i--) {
+                    const box = boxes[i];
+                    
+                    const intersectX1 = Math.max(bestBox.x1, box.x1);
+                    const intersectY1 = Math.max(bestBox.y1, box.y1);
+                    const intersectX2 = Math.min(bestBox.x2, box.x2);
+                    const intersectY2 = Math.min(bestBox.y2, box.y2);
+                    
+                    const intersectW = Math.max(0, intersectX2 - intersectX1);
+                    const intersectH = Math.max(0, intersectY2 - intersectY1);
+                    const intersectArea = intersectW * intersectH;
+                    
+                    const bestArea = bestBox.w * bestBox.h;
+                    const boxArea = box.w * box.h;
+                    const unionArea = bestArea + boxArea - intersectArea;
+                    
+                    const iou = intersectArea / unionArea;
+                    
+                    if (iou > iouThreshold) {
+                        boxes.splice(i, 1);
+                    }
+                }
+            }
+            return result;
+        }
+    </script>
+</body>
+</html>
