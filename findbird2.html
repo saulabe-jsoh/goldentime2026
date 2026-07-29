@@ -3,65 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IBS-PAS Video Analyzer (Sync Optimized)</title>
+    <title>IBS-PAS (Server-Side Rendering Ver.)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Pretendard', sans-serif; background-color: #0f172a; color: #f8fafc; }
         #video-container { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 0.5rem; overflow: hidden; border: 1px solid #334155; }
         
-        /* 핵심 변경: 원본 비디오는 백그라운드 재생을 위해 숨깁니다. */
+        /* 원본 비디오는 백그라운드 처리를 위해 완전히 숨깁니다 */
         video { display: none; } 
         
-        /* 사용자에게는 동기화가 완료된 캔버스(영상+박스)만 보여줍니다. */
-        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        /* 서버에서 처리되어 돌아온 이미지를 보여주는 영역 */
+        #result-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center p-6">
 
     <div class="w-full max-w-5xl space-y-4">
-        <!-- 헤더 -->
         <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
             <div>
-                <h1 class="font-bold text-xl text-indigo-400">YOLOv11 실시간 영상 관제 (Sync Ver.)</h1>
-                <p class="text-xs text-slate-400">네트워크 최적화 및 Frame-Lock 동기화 적용</p>
+                <h1 class="font-bold text-xl text-indigo-400">YOLOv11 실시간 영상 관제 (서버 렌더링)</h1>
+                <p class="text-xs text-slate-400">완벽한 프레임-박스 동기화 적용</p>
             </div>
-            
             <div id="status-badge" class="px-4 py-2 bg-slate-800 text-slate-400 text-sm font-bold rounded-full border border-slate-700 flex items-center gap-2">
                 <div id="status-indicator" class="w-3 h-3 rounded-full bg-slate-500"></div>
-                <span id="status-text">서버 연결 대기중</span>
+                <span id="status-text">대기중</span>
             </div>
         </div>
 
-        <!-- 1단계: 서버 연결 -->
         <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex gap-3 items-end">
             <div class="flex-grow">
-                <label class="block text-xs text-slate-400 font-semibold mb-1">1. Colab WebSocket URL 입력</label>
-                <input type="text" id="ws-url-input" placeholder="wss://..." 
-                       class="w-full px-4 py-2 bg-slate-950 text-white rounded-md border border-slate-700 focus:outline-none focus:border-indigo-500 text-sm">
+                <input type="text" id="ws-url-input" placeholder="wss://..." class="w-full px-4 py-2 bg-slate-950 text-white rounded-md border border-slate-700 text-sm">
             </div>
-            <button id="btn-connect" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-md transition-colors whitespace-nowrap">
-                서버 연결하기
-            </button>
+            <button id="btn-connect" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-md whitespace-nowrap">연결</button>
         </div>
 
-        <!-- 2단계: 파일 업로드 및 제어 -->
         <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-wrap gap-4 items-end">
             <div class="flex-grow">
-                <label class="block text-xs text-slate-400 font-semibold mb-1">2. 영상 파일 업로드 (.mp4)</label>
-                <input type="file" id="video-upload" accept="video/mp4,video/webm" 
-                       class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700 cursor-pointer bg-slate-950 border border-slate-700 rounded-md">
+                <input type="file" id="video-upload" accept="video/mp4,video/webm" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-slate-800 file:text-slate-300 bg-slate-950 border border-slate-700 rounded-md">
             </div>
-            <button id="btn-analyze" disabled class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-lg shadow-emerald-600/20">
-                분석 시작
-            </button>
+            <button id="btn-analyze" disabled class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-md disabled:opacity-50">분석 시작</button>
         </div>
 
-        <!-- 뷰포트 -->
         <div id="video-container">
             <video id="video" playsinline muted></video>
-            <canvas id="canvas"></canvas>
+            <!-- 캔버스 대신 img 태그 사용 -->
+            <img id="result-image" src="" alt="">
             <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 z-0">
-                <p class="text-sm">서버를 연결하고 영상을 업로드하면 동기화된 화면이 출력됩니다.</p>
+                <p class="text-sm">서버 처리된 화면이 여기에 표시됩니다.</p>
             </div>
         </div>
     </div>
@@ -73,40 +61,16 @@
         const btnAnalyze = document.getElementById('btn-analyze');
         
         const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
+        const resultImage = document.getElementById('result-image');
         const emptyState = document.getElementById('empty-state');
-        const statusBadge = document.getElementById('status-badge');
-        const statusIndicator = document.getElementById('status-indicator');
         const statusText = document.getElementById('status-text');
 
         let ws = null;
         let isAnalyzing = false;
         
-        // 네트워크 최적화를 위한 캡처용 임시 캔버스
         const captureCanvas = document.createElement('canvas');
         const captureCtx = captureCanvas.getContext('2d');
-        
-        // 전송 해상도 제한 (가로 640px 고정으로 네트워크 부하 최소화)
         const TARGET_WIDTH = 640; 
-
-        function updateStatus(state, message) {
-            statusText.textContent = message;
-            statusBadge.className = "px-4 py-2 text-sm font-bold rounded-full border flex items-center gap-2 ";
-            if (state === 'connected') {
-                statusBadge.className += "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-                statusIndicator.className = "w-3 h-3 rounded-full bg-emerald-500 animate-pulse";
-            } else if (state === 'error' || state === 'disconnected') {
-                statusBadge.className += "bg-red-500/10 text-red-400 border-red-500/20";
-                statusIndicator.className = "w-3 h-3 rounded-full bg-red-500";
-            } else if (state === 'connecting') {
-                statusBadge.className += "bg-amber-500/10 text-amber-400 border-amber-500/20";
-                statusIndicator.className = "w-3 h-3 rounded-full bg-amber-500 animate-ping";
-            } else {
-                statusBadge.className += "bg-slate-800 text-slate-400 border-slate-700";
-                statusIndicator.className = "w-3 h-3 rounded-full bg-slate-500";
-            }
-        }
 
         function checkReadyState() {
             btnAnalyze.disabled = !(ws && ws.readyState === WebSocket.OPEN && video.src);
@@ -114,67 +78,40 @@
 
         btnConnect.addEventListener('click', () => {
             const url = wsUrlInput.value.trim();
-            if (!url.startsWith('wss://')) return alert("wss:// 로 시작하는 주소를 입력하세요.");
+            if (!url.startsWith('wss://')) return alert("wss:// URL 확인");
 
             if (ws) ws.close();
-            updateStatus('connecting', '연결 시도 중...');
+            statusText.textContent = "연결 시도 중...";
             
             try {
                 ws = new WebSocket(url);
-                ws.onopen = () => {
-                    updateStatus('connected', '서버 연결 완료');
-                    btnConnect.textContent = "재연결";
-                    checkReadyState();
-                };
-
-                // ★ 완벽 동기화 렌더링 파트 ★
+                ws.onopen = () => { statusText.textContent = "연결 완료"; checkReadyState(); };
+                
+                // ★ 서버에서 완성된 이미지를 받아 화면에 출력 ★
                 ws.onmessage = (event) => {
                     if (!isAnalyzing) return;
                     
-                    const detections = JSON.parse(event.data);
+                    const response = JSON.parse(event.data);
                     
-                    // 1. 서버에 보냈던 '바로 그 프레임(captureCanvas)'을 화면(canvas)에 먼저 그립니다.
-                    canvas.width = captureCanvas.width;
-                    canvas.height = captureCanvas.height;
-                    ctx.drawImage(captureCanvas, 0, 0);
+                    // 서버가 보내준 Base64 이미지를 그대로 img 태그에 넣음
+                    resultImage.src = response.image;
+                    emptyState.style.display = "none";
                     
-                    // 2. 그 위에 바운딩 박스를 그립니다. (절대 엇나가지 않음)
-                    detections.forEach(det => {
-                        const x = det.cx - det.w / 2;
-                        const y = det.cy - det.h / 2;
-                        
-                        ctx.strokeStyle = "#3b82f6"; 
-                        ctx.lineWidth = 3;
-                        ctx.strokeRect(x, y, det.w, det.h);
-                        
-                        const label = `Bird ${Math.round(det.conf * 100)}%`;
-                        ctx.fillStyle = "#3b82f6";
-                        ctx.fillRect(x, y - 24, ctx.measureText(label).width + 10, 24);
-                        ctx.fillStyle = "#ffffff";
-                        ctx.font = "bold 14px Pretendard";
-                        ctx.fillText(label, x + 5, y - 7);
-                    });
-
-                    // 3. 서버 처리가 완료되었으므로, 다음 프레임을 찍어서 서버로 보냅니다 (Ping-Pong 룰)
+                    // 다음 프레임 요청 (Ping-Pong)
                     requestAnimationFrame(sendSingleFrame);
                 };
 
-                ws.onclose = () => { updateStatus('disconnected', '연결 종료됨'); stopAnalysis(); checkReadyState(); };
-                ws.onerror = () => { updateStatus('error', '연결 실패'); stopAnalysis(); checkReadyState(); };
-
-            } catch (error) { updateStatus('error', '네트워크 오류'); }
+                ws.onclose = () => { statusText.textContent = "종료됨"; stopAnalysis(); checkReadyState(); };
+                ws.onerror = () => { statusText.textContent = "오류 발생"; stopAnalysis(); checkReadyState(); };
+            } catch (error) {}
         });
 
         videoUpload.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                video.src = URL.createObjectURL(file);
+            if (e.target.files[0]) {
+                video.src = URL.createObjectURL(e.target.files[0]);
                 video.load();
-                video.onloadeddata = () => {
-                    emptyState.style.display = "none";
-                    checkReadyState();
-                };
-                video.onended = () => stopAnalysis();
+                video.onloadeddata = checkReadyState;
+                video.onended = stopAnalysis;
             }
         });
 
@@ -187,9 +124,7 @@
             isAnalyzing = true;
             video.play();
             btnAnalyze.textContent = "분석 중지";
-            btnAnalyze.className = "px-6 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-bold rounded-md shadow-lg shadow-red-600/20";
-            
-            // 최초 프레임 전송 트리거 발동
+            btnAnalyze.className = "px-6 py-2 bg-red-600 text-white text-sm font-bold rounded-md";
             sendSingleFrame();
         }
 
@@ -197,29 +132,18 @@
             isAnalyzing = false;
             video.pause();
             btnAnalyze.textContent = "분석 시작";
-            btnAnalyze.className = "px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-md shadow-lg shadow-emerald-600/20";
+            btnAnalyze.className = "px-6 py-2 bg-emerald-600 text-white text-sm font-bold rounded-md";
         }
 
-        // 프레임 캡처 및 전송 함수
         function sendSingleFrame() {
             if (!isAnalyzing || !ws || ws.readyState !== WebSocket.OPEN) return;
             
-            // 원본 비디오 비율을 유지하면서 가로 640px로 다운스케일링
             const scale = TARGET_WIDTH / video.videoWidth;
-            const targetHeight = video.videoHeight * scale;
-            
             captureCanvas.width = TARGET_WIDTH;
-            captureCanvas.height = targetHeight;
+            captureCanvas.height = video.videoHeight * scale;
             
-            // 현재 비디오 화면을 캡처 (리사이즈 적용)
-            captureCtx.drawImage(video, 0, 0, TARGET_WIDTH, targetHeight);
-            
-            // JPEG 변환 후 서버 전송 (품질 60% - 네트워크 초고속화)
-            const base64Data = captureCanvas.toDataURL('image/jpeg', 0.6);
-            ws.send(base64Data);
-            
-            // 주의: 여기서 setTimeout으로 또 보내지 않습니다. 
-            // ws.onmessage(서버 응답)가 도착하면 그 안에서 다음 sendSingleFrame()을 호출합니다.
+            captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+            ws.send(captureCanvas.toDataURL('image/jpeg', 0.6));
         }
     </script>
 </body>
