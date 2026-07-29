@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>IBS-PAS (Colab + GitHub Pages)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen p-8 flex flex-col items-center">
+
+    <h1 class="text-2xl font-bold mb-4 text-indigo-400">Colab 연동 실시간 관제</h1>
+    
+    <!-- Colab URL 입력부 -->
+    <div class="mb-4 w-full max-w-[800px] flex gap-2">
+        <input type="text" id="ws-url-input" placeholder="Colab에서 출력된 wss://... URL을 입력하세요" 
+               class="flex-grow px-4 py-2 bg-slate-800 text-white rounded-md border border-slate-700 focus:outline-none focus:border-indigo-500">
+        <button id="btn-start" class="px-6 py-2 bg-emerald-600 rounded-md font-bold hover:bg-emerald-500">서버 연결</button>
+        <button id="btn-stop" class="px-6 py-2 bg-red-600 rounded-md font-bold hover:bg-red-500 hidden">중지</button>
+    </div>
+
+    <div style="position: relative; width: 100%; max-width: 800px; aspect-ratio: 16/9; background: #000;">
+        <video id="video" autoplay playsinline muted style="position: absolute; width: 100%; height: 100%; object-fit: contain;"></video>
+        <canvas id="canvas" style="position: absolute; width: 100%; height: 100%; object-fit: contain; z-index: 10; pointer-events: none;"></canvas>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const btnStart = document.getElementById('btn-start');
+        const btnStop = document.getElementById('btn-stop');
+        const urlInput = document.getElementById('ws-url-input');
+        
+        let ws;
+        let stream;
+        let isAnalyzing = false;
+
+        btnStart.addEventListener('click', async () => {
+            const wsUrl = urlInput.value.trim();
+            if(!wsUrl.startsWith('wss://')) {
+                alert("올바른 WebSocket URL(wss://...)을 입력해주세요.");
+                return;
+            }
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    isAnalyzing = true;
+                    btnStart.classList.add('hidden');
+                    btnStop.classList.remove('hidden');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    sendFrameLoop();
+                };
+
+                ws.onmessage = (event) => {
+                    const detections = JSON.parse(event.data);
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    detections.forEach(det => {
+                        const x = det.cx - det.w / 2;
+                        const y = det.cy - det.h / 2;
+                        
+                        ctx.strokeStyle = "#3b82f6";
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(x, y, det.w, det.h);
+                        
+                        ctx.fillStyle = "#3b82f6";
+                        ctx.fillRect(x, y - 20, 80, 20);
+                        ctx.fillStyle = "#fff";
+                        ctx.font = "14px Arial";
+                        ctx.fillText(`Bird ${Math.round(det.conf * 100)}%`, x + 5, y - 5);
+                    });
+                };
+                
+            } catch (err) { alert("웹캠 접근 실패 또는 웹소켓 연결 에러"); }
+        });
+
+        btnStop.addEventListener('click', () => {
+            isAnalyzing = false;
+            if (ws) ws.close();
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            btnStop.classList.add('hidden');
+            btnStart.classList.remove('hidden');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        });
+
+        function sendFrameLoop() {
+            if (!isAnalyzing) return;
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = video.videoWidth;
+            tempCanvas.height = video.videoHeight;
+            tempCanvas.getContext('2d').drawImage(video, 0, 0);
+            
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(tempCanvas.toDataURL('image/jpeg', 0.5)); // 화질 50% 압축 (네트워크 지연 방지)
+            }
+            setTimeout(sendFrameLoop, 100); // 약 10 FPS
+        }
+    </script>
+</body>
+</html>
