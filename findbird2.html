@@ -3,54 +3,93 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IBS-PAS (Server-Side Rendering Ver.)</title>
+    <title>IBS-PAS (SSR + Telemetry)</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', sans-serif; background-color: #0f172a; color: #f8fafc; }
-        #video-container { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 0.5rem; overflow: hidden; border: 1px solid #334155; }
-        
-        /* 원본 비디오는 백그라운드 처리를 위해 완전히 숨깁니다 */
-        video { display: none; } 
-        
-        /* 서버에서 처리되어 돌아온 이미지를 보여주는 영역 */
+        #video-container { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; overflow: hidden; border-radius: 0.5rem; border: 1px solid #334155; }
+        video { display: none; } /* 원본 비디오 숨김 */
         #result-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        .log-panel::-webkit-scrollbar { width: 6px; }
+        .log-panel::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col items-center p-6">
+<body class="min-h-screen flex flex-col p-6 items-center">
 
-    <div class="w-full max-w-5xl space-y-4">
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
-            <div>
-                <h1 class="font-bold text-xl text-indigo-400">YOLOv11 실시간 영상 관제 (서버 렌더링)</h1>
-                <p class="text-xs text-slate-400">완벽한 프레임-박스 동기화 적용</p>
+    <div class="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <div class="lg:col-span-2 space-y-4">
+            
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
+                <div>
+                    <h1 class="font-bold text-xl text-indigo-400">YOLOv11 Server-Side Rendering Engine</h1>
+                    <p class="text-xs text-slate-400">완벽한 프레임 동기화 및 줌(Zoom) 기반 거리 역산 연동</p>
+                </div>
+                <div id="status-badge" class="px-4 py-2 bg-slate-800 text-slate-400 text-sm font-bold rounded-full border border-slate-700 flex items-center gap-2">
+                    <div id="status-indicator" class="w-3 h-3 rounded-full bg-slate-500"></div>
+                    <span id="status-text">서버 대기중</span>
+                </div>
             </div>
-            <div id="status-badge" class="px-4 py-2 bg-slate-800 text-slate-400 text-sm font-bold rounded-full border border-slate-700 flex items-center gap-2">
-                <div id="status-indicator" class="w-3 h-3 rounded-full bg-slate-500"></div>
-                <span id="status-text">대기중</span>
+
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex gap-3 items-end">
+                <div class="flex-grow">
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">1. Colab 웹소켓 URL</label>
+                    <input type="text" id="ws-url-input" placeholder="wss://..." class="w-full px-4 py-2 bg-slate-950 text-white rounded-md border border-slate-700 focus:outline-none text-sm">
+                </div>
+                <button id="btn-connect" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-md whitespace-nowrap">서버 연결</button>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-wrap gap-4 items-end">
+                <div class="flex-grow">
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">2. 영상 파일 업로드 (.mp4)</label>
+                    <input type="file" id="video-upload" accept="video/mp4" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700 bg-slate-950 border border-slate-700 rounded-md">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">EO 광학 배율</label>
+                    <select id="zoom-level" class="block w-full px-4 py-2 bg-slate-950 border border-slate-700 rounded-md text-sm text-white focus:outline-none">
+                        <option value="15">15배 줌 (x15)</option>
+                        <option value="30">30배 줌 (x30)</option>
+                    </select>
+                </div>
+                <button id="btn-analyze" disabled class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-md disabled:opacity-50">분석 시작</button>
+            </div>
+
+            <div id="video-container">
+                <video id="video" playsinline muted></video>
+                <img id="result-image" src="" alt="">
+                <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 z-0">
+                    <i class="fa-solid fa-server text-4xl mb-3"></i>
+                    <p class="text-sm">서버 처리된 렌더링 화면이 여기에 표시됩니다.</p>
+                </div>
             </div>
         </div>
 
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex gap-3 items-end">
-            <div class="flex-grow">
-                <input type="text" id="ws-url-input" placeholder="wss://..." class="w-full px-4 py-2 bg-slate-950 text-white rounded-md border border-slate-700 text-sm">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl flex flex-col h-full overflow-hidden">
+            <div class="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
+                <h2 class="text-sm font-bold text-slate-200">
+                    <i class="fa-solid fa-microchip text-indigo-400"></i> Server Telemetry
+                </h2>
             </div>
-            <button id="btn-connect" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-md whitespace-nowrap">연결</button>
-        </div>
-
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-wrap gap-4 items-end">
-            <div class="flex-grow">
-                <input type="file" id="video-upload" accept="video/mp4,video/webm" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-slate-800 file:text-slate-300 bg-slate-950 border border-slate-700 rounded-md">
+            <div class="grid grid-cols-2 gap-2 p-4 border-b border-slate-800 bg-slate-900 text-center">
+                <div class="bg-slate-950 p-2 rounded border border-slate-800">
+                    <div class="text-[10px] text-slate-400">서버 추론 (Inference)</div>
+                    <div id="metric-infer" class="font-mono text-sm font-bold text-indigo-400">0 ms</div>
+                </div>
+                <div class="bg-slate-950 p-2 rounded border border-slate-800">
+                    <div class="text-[10px] text-slate-400">서버 렌더링 (Post)</div>
+                    <div id="metric-post" class="font-mono text-sm font-bold text-amber-400">0 ms</div>
+                </div>
+                <div class="bg-slate-950 p-2 rounded border border-slate-800">
+                    <div class="text-[10px] text-slate-400">네트워크 체감 FPS</div>
+                    <div id="metric-fps" class="font-mono text-sm font-bold text-emerald-400">0</div>
+                </div>
+                <div class="bg-slate-950 p-2 rounded border border-slate-800">
+                    <div class="text-[10px] text-slate-400">탐지 객체</div>
+                    <div id="metric-birds" class="font-mono text-sm font-bold text-rose-400">0 마리</div>
+                </div>
             </div>
-            <button id="btn-analyze" disabled class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-md disabled:opacity-50">분석 시작</button>
-        </div>
-
-        <div id="video-container">
-            <video id="video" playsinline muted></video>
-            <!-- 캔버스 대신 img 태그 사용 -->
-            <img id="result-image" src="" alt="">
-            <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 z-0">
-                <p class="text-sm">서버 처리된 화면이 여기에 표시됩니다.</p>
-            </div>
+            <pre id="sys-log" class="log-panel p-4 overflow-y-auto text-xs font-mono text-slate-300 h-[450px] leading-relaxed"></pre>
         </div>
     </div>
 
@@ -59,58 +98,114 @@
         const btnConnect = document.getElementById('btn-connect');
         const videoUpload = document.getElementById('video-upload');
         const btnAnalyze = document.getElementById('btn-analyze');
+        const zoomSelect = document.getElementById('zoom-level');
         
         const video = document.getElementById('video');
         const resultImage = document.getElementById('result-image');
         const emptyState = document.getElementById('empty-state');
+        const sysLog = document.getElementById('sys-log');
+        const statusBadge = document.getElementById('status-badge');
+        const statusIndicator = document.getElementById('status-indicator');
         const statusText = document.getElementById('status-text');
 
         let ws = null;
         let isAnalyzing = false;
+        let lastRequestTime = 0;
+        let frameCount = 0;
         
         const captureCanvas = document.createElement('canvas');
         const captureCtx = captureCanvas.getContext('2d');
         const TARGET_WIDTH = 640; 
 
+        function appendLog(msg, type="INFO") {
+            const time = new Date().toISOString().split('T')[1].slice(0, 12);
+            let color = "text-slate-300";
+            if(type === "WARN") color = "text-amber-400";
+            if(type === "ERROR") color = "text-red-400";
+            if(type === "PERF") color = "text-indigo-300";
+            
+            const logLine = `<span class="text-slate-500">[${time}]</span> <span class="${color}">${msg}</span>\n`;
+            sysLog.innerHTML = logLine + sysLog.innerHTML.substring(0, 5000);
+        }
+
+        function updateStatus(state, message) {
+            statusText.textContent = message;
+            statusBadge.className = "px-4 py-2 text-sm font-bold rounded-full border flex items-center gap-2 transition-colors ";
+            if (state === 'connected') {
+                statusBadge.className += "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+                statusIndicator.className = "w-3 h-3 rounded-full bg-emerald-500 animate-pulse";
+            } else if (state === 'error' || state === 'disconnected') {
+                statusBadge.className += "bg-red-500/10 text-red-400 border-red-500/20";
+                statusIndicator.className = "w-3 h-3 rounded-full bg-red-500";
+            } else {
+                statusBadge.className += "bg-amber-500/10 text-amber-400 border-amber-500/20";
+                statusIndicator.className = "w-3 h-3 rounded-full bg-amber-500 animate-ping";
+            }
+        }
+
         function checkReadyState() {
             btnAnalyze.disabled = !(ws && ws.readyState === WebSocket.OPEN && video.src);
         }
 
+        // 서버 연결
         btnConnect.addEventListener('click', () => {
             const url = wsUrlInput.value.trim();
             if (!url.startsWith('wss://')) return alert("wss:// URL 확인");
 
             if (ws) ws.close();
-            statusText.textContent = "연결 시도 중...";
+            updateStatus('connecting', '연결 시도 중...');
             
             try {
                 ws = new WebSocket(url);
-                ws.onopen = () => { statusText.textContent = "연결 완료"; checkReadyState(); };
+                ws.onopen = () => { 
+                    updateStatus('connected', '서버 연결 완료'); 
+                    appendLog("WebSocket 서버 연결 성공", "INFO");
+                    checkReadyState(); 
+                };
                 
-                // ★ 서버에서 완성된 이미지를 받아 화면에 출력 ★
+                // ★ 서버로부터 결과 수신 ★
                 ws.onmessage = (event) => {
                     if (!isAnalyzing) return;
                     
                     const response = JSON.parse(event.data);
                     
-                    // 서버가 보내준 Base64 이미지를 그대로 img 태그에 넣음
+                    // 1. 서버 렌더링 이미지 업데이트
                     resultImage.src = response.image;
                     emptyState.style.display = "none";
                     
-                    // 다음 프레임 요청 (Ping-Pong)
+                    // 2. Telemetry 및 FPS 계산
+                    const now = performance.now();
+                    const cycleTime = now - lastRequestTime;
+                    const networkFps = 1000 / cycleTime;
+                    
+                    document.getElementById('metric-infer').innerText = `${response.telemetry.infer_ms} ms`;
+                    document.getElementById('metric-post').innerText = `${response.telemetry.post_ms} ms`;
+                    document.getElementById('metric-fps').innerText = networkFps.toFixed(1);
+                    document.getElementById('metric-birds').innerText = `${response.count} 마리`;
+
+                    if (frameCount % 10 === 0) {
+                        appendLog(`[서버응답] 줌: x${zoomSelect.value} | Infer: ${response.telemetry.infer_ms}ms | FPS: ${networkFps.toFixed(1)}`, "PERF");
+                    }
+                    frameCount++;
+
+                    // 3. Ping-Pong 룰에 의해 다음 프레임 전송
                     requestAnimationFrame(sendSingleFrame);
                 };
 
-                ws.onclose = () => { statusText.textContent = "종료됨"; stopAnalysis(); checkReadyState(); };
-                ws.onerror = () => { statusText.textContent = "오류 발생"; stopAnalysis(); checkReadyState(); };
+                ws.onclose = () => { updateStatus('disconnected', '종료됨'); stopAnalysis(); checkReadyState(); appendLog("서버 연결 끊김", "WARN"); };
+                ws.onerror = () => { updateStatus('error', '오류 발생'); stopAnalysis(); checkReadyState(); appendLog("서버 네트워크 오류", "ERROR"); };
             } catch (error) {}
         });
 
+        // 영상 업로드
         videoUpload.addEventListener('change', (e) => {
             if (e.target.files[0]) {
                 video.src = URL.createObjectURL(e.target.files[0]);
                 video.load();
-                video.onloadeddata = checkReadyState;
+                video.onloadeddata = () => {
+                    checkReadyState();
+                    appendLog(`비디오 로드됨 (해상도: ${video.videoWidth}x${video.videoHeight})`, "INFO");
+                };
                 video.onended = stopAnalysis;
             }
         });
@@ -125,6 +220,7 @@
             video.play();
             btnAnalyze.textContent = "분석 중지";
             btnAnalyze.className = "px-6 py-2 bg-red-600 text-white text-sm font-bold rounded-md";
+            appendLog("SSR 분석 스트리밍 시작...", "INFO");
             sendSingleFrame();
         }
 
@@ -135,6 +231,7 @@
             btnAnalyze.className = "px-6 py-2 bg-emerald-600 text-white text-sm font-bold rounded-md";
         }
 
+        // 프레임 전송 로직
         function sendSingleFrame() {
             if (!isAnalyzing || !ws || ws.readyState !== WebSocket.OPEN) return;
             
@@ -143,7 +240,16 @@
             captureCanvas.height = video.videoHeight * scale;
             
             captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
-            ws.send(captureCanvas.toDataURL('image/jpeg', 0.6));
+            const base64Data = captureCanvas.toDataURL('image/jpeg', 0.6);
+            
+            // JSON 구성: 이미지 + 현재 UI에 선택된 줌 배율
+            const requestPayload = {
+                image: base64Data,
+                zoom: parseInt(zoomSelect.value)
+            };
+
+            lastRequestTime = performance.now();
+            ws.send(JSON.stringify(requestPayload));
         }
     </script>
 </body>
