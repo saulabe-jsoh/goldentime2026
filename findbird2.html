@@ -2,103 +2,243 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>IBS-PAS (Colab + GitHub Pages)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IBS-PAS Video Analyzer (Colab 연동)</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Pretendard', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        #video-container { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 0.5rem; overflow: hidden; border: 1px solid #334155; }
+        video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; z-index: 10; pointer-events: none; }
+    </style>
 </head>
-<body class="bg-slate-900 text-white min-h-screen p-8 flex flex-col items-center">
+<body class="min-h-screen flex flex-col items-center p-6">
 
-    <h1 class="text-2xl font-bold mb-4 text-indigo-400">Colab 연동 실시간 관제</h1>
-    
-    <!-- Colab URL 입력부 -->
-    <div class="mb-4 w-full max-w-[800px] flex gap-2">
-        <input type="text" id="ws-url-input" placeholder="Colab에서 출력된 wss://... URL을 입력하세요" 
-               class="flex-grow px-4 py-2 bg-slate-800 text-white rounded-md border border-slate-700 focus:outline-none focus:border-indigo-500">
-        <button id="btn-start" class="px-6 py-2 bg-emerald-600 rounded-md font-bold hover:bg-emerald-500">서버 연결</button>
-        <button id="btn-stop" class="px-6 py-2 bg-red-600 rounded-md font-bold hover:bg-red-500 hidden">중지</button>
-    </div>
+    <div class="w-full max-w-5xl space-y-4">
+        <!-- 헤더 및 연결 상태 -->
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
+            <div>
+                <h1 class="font-bold text-xl text-indigo-400">YOLOv11 실시간 영상 관제 시스템</h1>
+                <p class="text-xs text-slate-400">Google Colab 백엔드 연동 (영상 파일 전용)</p>
+            </div>
+            
+            <!-- 연결 상태 뱃지 -->
+            <div id="status-badge" class="px-4 py-2 bg-slate-800 text-slate-400 text-sm font-bold rounded-full border border-slate-700 flex items-center gap-2 transition-colors">
+                <div id="status-indicator" class="w-3 h-3 rounded-full bg-slate-500"></div>
+                <span id="status-text">서버 연결 대기중</span>
+            </div>
+        </div>
 
-    <div style="position: relative; width: 100%; max-width: 800px; aspect-ratio: 16/9; background: #000;">
-        <video id="video" autoplay playsinline muted style="position: absolute; width: 100%; height: 100%; object-fit: contain;"></video>
-        <canvas id="canvas" style="position: absolute; width: 100%; height: 100%; object-fit: contain; z-index: 10; pointer-events: none;"></canvas>
+        <!-- 1단계: 서버 연결 설정 -->
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex gap-3 items-end">
+            <div class="flex-grow">
+                <label class="block text-xs text-slate-400 font-semibold mb-1">1. Colab WebSocket URL 입력</label>
+                <input type="text" id="ws-url-input" placeholder="wss://... (ngrok URL을 입력하세요)" 
+                       class="w-full px-4 py-2 bg-slate-950 text-white rounded-md border border-slate-700 focus:outline-none focus:border-indigo-500 text-sm">
+            </div>
+            <button id="btn-connect" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-md transition-colors whitespace-nowrap">
+                서버 연결하기
+            </button>
+        </div>
+
+        <!-- 2단계: 영상 업로드 및 제어 -->
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-wrap gap-4 items-end">
+            <div class="flex-grow">
+                <label class="block text-xs text-slate-400 font-semibold mb-1">2. 분석할 영상 파일 업로드 (.mp4)</label>
+                <input type="file" id="video-upload" accept="video/mp4,video/webm" 
+                       class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700 cursor-pointer bg-slate-950 border border-slate-700 rounded-md">
+            </div>
+            <button id="btn-analyze" disabled class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-lg shadow-emerald-600/20">
+                분석 시작
+            </button>
+        </div>
+
+        <!-- 뷰포트 (영상 + 캔버스) -->
+        <div id="video-container">
+            <video id="video" playsinline muted></video>
+            <canvas id="canvas"></canvas>
+            <!-- 대기 화면 안내 -->
+            <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 z-0">
+                <p class="text-sm">서버를 연결하고 영상 파일을 업로드해주세요.</p>
+            </div>
+        </div>
     </div>
 
     <script>
+        const wsUrlInput = document.getElementById('ws-url-input');
+        const btnConnect = document.getElementById('btn-connect');
+        
+        const videoUpload = document.getElementById('video-upload');
+        const btnAnalyze = document.getElementById('btn-analyze');
+        
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        const btnStart = document.getElementById('btn-start');
-        const btnStop = document.getElementById('btn-stop');
-        const urlInput = document.getElementById('ws-url-input');
+        const emptyState = document.getElementById('empty-state');
         
-        let ws;
-        let stream;
-        let isAnalyzing = false;
+        const statusBadge = document.getElementById('status-badge');
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
 
-        btnStart.addEventListener('click', async () => {
-            const wsUrl = urlInput.value.trim();
-            if(!wsUrl.startsWith('wss://')) {
-                alert("올바른 WebSocket URL(wss://...)을 입력해주세요.");
+        let ws = null;
+        let isAnalyzing = false;
+        let frameDelay = 100; // 프레임 전송 간격 (100ms = 약 10 FPS)
+
+        // 상태 UI 업데이트 함수
+        function updateStatus(state, message) {
+            statusText.textContent = message;
+            statusBadge.className = "px-4 py-2 text-sm font-bold rounded-full border flex items-center gap-2 transition-colors ";
+            
+            if (state === 'connected') {
+                statusBadge.className += "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+                statusIndicator.className = "w-3 h-3 rounded-full bg-emerald-500 animate-pulse";
+            } else if (state === 'error' || state === 'disconnected') {
+                statusBadge.className += "bg-red-500/10 text-red-400 border-red-500/20";
+                statusIndicator.className = "w-3 h-3 rounded-full bg-red-500";
+            } else if (state === 'connecting') {
+                statusBadge.className += "bg-amber-500/10 text-amber-400 border-amber-500/20";
+                statusIndicator.className = "w-3 h-3 rounded-full bg-amber-500 animate-ping";
+            } else {
+                statusBadge.className += "bg-slate-800 text-slate-400 border-slate-700";
+                statusIndicator.className = "w-3 h-3 rounded-full bg-slate-500";
+            }
+        }
+
+        // 조건 검사: 소켓이 열려있고 비디오 소스가 있으면 [분석 시작] 버튼 활성화
+        function checkReadyState() {
+            if (ws && ws.readyState === WebSocket.OPEN && video.src) {
+                btnAnalyze.disabled = false;
+            } else {
+                btnAnalyze.disabled = true;
+            }
+        }
+
+        // 1. 서버 연결 로직
+        btnConnect.addEventListener('click', () => {
+            const url = wsUrlInput.value.trim();
+            if (!url.startsWith('wss://')) {
+                alert("정확한 wss:// URL을 입력해주세요.");
                 return;
             }
 
+            if (ws) ws.close(); // 기존 연결이 있다면 종료
+
+            updateStatus('connecting', '연결 시도 중...');
+            
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                video.srcObject = stream;
-                
-                ws = new WebSocket(wsUrl);
-                
+                ws = new WebSocket(url);
+
                 ws.onopen = () => {
-                    isAnalyzing = true;
-                    btnStart.classList.add('hidden');
-                    btnStop.classList.remove('hidden');
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    sendFrameLoop();
+                    updateStatus('connected', '서버 연결 완료');
+                    btnConnect.textContent = "재연결";
+                    checkReadyState();
                 };
 
                 ws.onmessage = (event) => {
                     const detections = JSON.parse(event.data);
+                    
+                    // 캔버스 초기화 후 바운딩 박스 그리기
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     
                     detections.forEach(det => {
                         const x = det.cx - det.w / 2;
                         const y = det.cy - det.h / 2;
                         
-                        ctx.strokeStyle = "#3b82f6";
+                        ctx.strokeStyle = "#3b82f6"; // 파란색 테두리
                         ctx.lineWidth = 3;
                         ctx.strokeRect(x, y, det.w, det.h);
                         
+                        const label = `Bird ${Math.round(det.conf * 100)}%`;
                         ctx.fillStyle = "#3b82f6";
-                        ctx.fillRect(x, y - 20, 80, 20);
-                        ctx.fillStyle = "#fff";
-                        ctx.font = "14px Arial";
-                        ctx.fillText(`Bird ${Math.round(det.conf * 100)}%`, x + 5, y - 5);
+                        ctx.fillRect(x, y - 24, ctx.measureText(label).width + 10, 24);
+                        ctx.fillStyle = "#ffffff";
+                        ctx.font = "bold 14px Pretendard";
+                        ctx.fillText(label, x + 5, y - 7);
                     });
                 };
+
+                ws.onclose = () => {
+                    updateStatus('disconnected', '연결 종료됨');
+                    stopAnalysis();
+                    checkReadyState();
+                };
+
+                ws.onerror = () => {
+                    updateStatus('error', '연결 실패 (Colab 확인 필요)');
+                    stopAnalysis();
+                    checkReadyState();
+                };
+
+            } catch (error) {
+                updateStatus('error', '네트워크 오류');
+            }
+        });
+
+        // 2. 비디오 파일 업로드 로직
+        videoUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const fileURL = URL.createObjectURL(file);
+                video.src = fileURL;
+                video.load();
                 
-            } catch (err) { alert("웹캠 접근 실패 또는 웹소켓 연결 에러"); }
+                video.onloadeddata = () => {
+                    emptyState.style.display = "none";
+                    // 캔버스 크기를 비디오 원본 해상도와 일치시킴
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    checkReadyState();
+                };
+
+                // 영상이 끝나면 분석 자동 중지
+                video.onended = () => {
+                    stopAnalysis();
+                };
+            }
         });
 
-        btnStop.addEventListener('click', () => {
+        // 3. 분석(전송) 제어 로직
+        btnAnalyze.addEventListener('click', () => {
+            if (isAnalyzing) {
+                stopAnalysis();
+            } else {
+                startAnalysis();
+            }
+        });
+
+        function startAnalysis() {
+            isAnalyzing = true;
+            video.play();
+            btnAnalyze.textContent = "분석 중지";
+            btnAnalyze.className = "px-6 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-bold rounded-md transition-colors shadow-lg shadow-red-600/20";
+            sendFrameLoop();
+        }
+
+        function stopAnalysis() {
             isAnalyzing = false;
-            if (ws) ws.close();
-            if (stream) stream.getTracks().forEach(track => track.stop());
-            btnStop.classList.add('hidden');
-            btnStart.classList.remove('hidden');
+            video.pause();
+            btnAnalyze.textContent = "분석 시작";
+            btnAnalyze.className = "px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-md transition-colors shadow-lg shadow-emerald-600/20";
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-        });
+        }
 
+        // 영상 프레임을 캡처하여 WebSocket으로 전송하는 루프
         function sendFrameLoop() {
-            if (!isAnalyzing) return;
+            if (!isAnalyzing || !ws || ws.readyState !== WebSocket.OPEN) return;
+            
+            // 임시 캔버스에 현재 비디오 프레임 복사
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = video.videoWidth;
             tempCanvas.height = video.videoHeight;
             tempCanvas.getContext('2d').drawImage(video, 0, 0);
             
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(tempCanvas.toDataURL('image/jpeg', 0.5)); // 화질 50% 압축 (네트워크 지연 방지)
-            }
-            setTimeout(sendFrameLoop, 100); // 약 10 FPS
+            // 이미지를 JPEG(품질 60%)로 인코딩하여 전송 (네트워크 속도 최적화)
+            const base64Data = tempCanvas.toDataURL('image/jpeg', 0.6);
+            ws.send(base64Data);
+            
+            // 지정된 딜레이(ms) 후 다음 프레임 전송 요청
+            setTimeout(sendFrameLoop, frameDelay);
         }
     </script>
 </body>
