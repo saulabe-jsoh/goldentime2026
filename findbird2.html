@@ -13,34 +13,31 @@
         .log-panel::-webkit-scrollbar { width: 6px; }
         .log-panel::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
         /* 로딩 스피너 오버레이 */
-        #loading-overlay { display: none; position: absolute; inset: 0; background: rgba(15, 23, 42, 0.8); z-index: 50; flex-direction: column; align-items: center; justify-content: center; }
+        #loading-overlay { display: none; position: absolute; inset: 0; background: rgba(15, 23, 42, 0.85); z-index: 50; flex-direction: column; align-items: center; justify-content: center; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col p-6 items-center">
 
     <div class="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        <!-- 좌측: 영상 제어 및 뷰어 -->
         <div class="lg:col-span-2 space-y-4">
             
             <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
                 <div>
                     <h1 class="font-bold text-xl text-indigo-400">YOLOv11 배치 프로세싱 엔진</h1>
-                    <p class="text-xs text-slate-400">영상 파일 일괄 전송 ➔ 서버 렌더링 ➔ 동기화 재생 및 로그 출력</p>
+                    <p class="text-xs text-slate-400">영상 파일 전송 진행률 및 서버 렌더링 동기화</p>
                 </div>
             </div>
 
-            <!-- 서버 URL 입력 (REST API) -->
             <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
                 <label class="block text-xs text-slate-400 font-semibold mb-1">1. Colab 서버 URL (https://...)</label>
-                <input type="text" id="api-url-input" placeholder="ngrok 주소를 입력하세요 (https://...)" class="w-full px-4 py-2 bg-slate-950 text-white rounded-md border border-slate-700 text-sm">
+                <input type="text" id="api-url-input" placeholder="ngrok 주소를 입력하세요 (https://...)" class="w-full px-4 py-2 bg-slate-950 text-white rounded-md border border-slate-700 text-sm focus:outline-none focus:border-indigo-500">
             </div>
 
-            <!-- 파일 업로드 및 분석 제어 -->
             <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-wrap gap-4 items-end">
                 <div class="flex-grow">
                     <label class="block text-xs text-slate-400 font-semibold mb-1">2. 분석할 영상 업로드 (.mp4)</label>
-                    <input type="file" id="video-upload" accept="video/mp4" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700 bg-slate-950 border border-slate-700 rounded-md">
+                    <input type="file" id="video-upload" accept="video/mp4" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700 bg-slate-950 border border-slate-700 rounded-md cursor-pointer">
                 </div>
                 <div>
                     <label class="block text-xs text-slate-400 font-semibold mb-1">EO 광학 배율</label>
@@ -49,31 +46,33 @@
                         <option value="30">30배 줌 (x30)</option>
                     </select>
                 </div>
-                <button id="btn-analyze" disabled class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-md disabled:opacity-50 transition-colors">
+                <button id="btn-analyze" disabled class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-md disabled:opacity-50 transition-colors whitespace-nowrap">
                     전송 및 분석
                 </button>
             </div>
 
-            <!-- 비디오 뷰포트 -->
             <div id="video-container">
                 <video id="result-video" controls playsinline></video>
                 
-                <!-- 대기 화면 -->
                 <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 z-0 bg-black">
                     <i class="fa-solid fa-cloud-arrow-up text-4xl mb-3"></i>
                     <p class="text-sm">영상을 전송하면 서버가 분석 후 결과를 반환합니다.</p>
                 </div>
 
-                <!-- 분석 중 로딩 오버레이 -->
                 <div id="loading-overlay">
-                    <i class="fa-solid fa-circle-notch fa-spin text-indigo-500 text-5xl mb-4"></i>
-                    <p class="text-white font-bold mb-1">서버에서 영상을 분석 중입니다...</p>
-                    <p class="text-slate-400 text-xs">영상의 길이에 따라 수십 초가 소요될 수 있습니다.</p>
+                    <i id="loading-spinner" class="fa-solid fa-cloud-arrow-up text-indigo-500 text-5xl mb-4"></i>
+                    <p id="loading-text" class="text-white font-bold mb-2">영상을 서버로 전송 중입니다...</p>
+                    
+                    <div class="w-64 bg-slate-800 rounded-full h-3 mb-2 overflow-hidden border border-slate-700 shadow-inner">
+                        <div id="progress-bar" class="bg-gradient-to-r from-indigo-500 to-emerald-400 h-3 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+                    </div>
+                    <p id="progress-text" class="text-emerald-400 font-mono font-bold text-sm">0%</p>
+
+                    <p class="text-slate-400 text-xs mt-4 text-center px-6">파일 전송 후 서버의 영상 분석 및 인코딩에<br>비디오 길이만큼의 시간이 추가로 소요될 수 있습니다.</p>
                 </div>
             </div>
         </div>
 
-        <!-- 우측: 분석 결과 로그 패널 -->
         <div class="bg-slate-900 border border-slate-800 rounded-xl flex flex-col h-full overflow-hidden max-h-[800px]">
             <div class="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
                 <h2 class="text-sm font-bold text-slate-200">
@@ -98,6 +97,12 @@
         const emptyState = document.getElementById('empty-state');
         const loadingOverlay = document.getElementById('loading-overlay');
         
+        // 진행률 UI 요소
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const loadingText = document.getElementById('loading-text');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        
         const logContainer = document.getElementById('log-container');
         const logCount = document.getElementById('log-count');
 
@@ -110,54 +115,93 @@
             }
         });
 
-        btnAnalyze.addEventListener('click', async () => {
+        btnAnalyze.addEventListener('click', () => {
             const baseUrl = apiUrlInput.value.trim();
             if (!baseUrl.startsWith('http')) return alert('올바른 서버 URL(https://...)을 입력하세요.');
             if (!selectedFile) return alert('영상을 업로드하세요.');
 
-            // UI 상태 변경 (로딩 시작)
+            // UI 상태 초기화 (로딩 시작)
             btnAnalyze.disabled = true;
             emptyState.style.display = "none";
             loadingOverlay.style.display = "flex";
-            logContainer.innerHTML = ''; // 기존 로그 초기화
+            
+            progressBar.style.width = "0%";
+            progressBar.classList.remove('animate-pulse');
+            progressText.textContent = "0%";
+            loadingText.textContent = "영상을 서버로 전송 중입니다...";
+            loadingSpinner.className = "fa-solid fa-cloud-arrow-up text-indigo-500 text-5xl mb-4";
+            
+            logContainer.innerHTML = ''; 
             logCount.textContent = '분석 중...';
             resultVideo.src = "";
 
-            // 서버로 보낼 FormData 생성
+            // 폼 데이터 구성
             const formData = new FormData();
             formData.append("file", selectedFile);
             formData.append("zoom", zoomSelect.value);
 
-            try {
-                // REST API POST 요청
-                const response = await fetch(`${baseUrl}/analyze`, {
-                    method: 'POST',
-                    body: formData
-                });
+            // XMLHttpRequest를 통한 진행률 추적 통신
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `${baseUrl}/analyze`, true);
 
-                if (!response.ok) throw new Error('서버 처리 에러');
+            // [핵심] 업로드 진행률 모니터링 이벤트
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percentComplete = Math.round((e.loaded / e.total) * 100);
+                    progressBar.style.width = percentComplete + '%';
+                    progressText.textContent = percentComplete + '%';
 
-                const data = await response.json(); // 반환된 JSON 파싱
+                    // 업로드가 완료되면 서버 분석 대기 상태로 메시지 변경
+                    if (percentComplete >= 100) {
+                        loadingText.textContent = "전송 완료! 서버에서 영상을 분석 및 렌더링 중입니다...";
+                        loadingSpinner.className = "fa-solid fa-gear fa-spin text-emerald-400 text-5xl mb-4";
+                        progressBar.classList.add('animate-pulse'); // 대기 애니메이션 추가
+                        progressText.textContent = "Processing...";
+                    }
+                }
+            });
 
-                // 1. 반환된 처리 완료 영상 URL을 비디오 태그에 세팅
-                resultVideo.src = `${baseUrl}${data.video_url}`;
-                resultVideo.play();
-
-                // 2. 우측 패널에 탐지 로그 렌더링
-                renderLogs(data.logs);
-
-            } catch (error) {
-                console.error(error);
-                alert("영상 분석 중 오류가 발생했습니다. 서버 상태를 확인하세요.");
-                emptyState.style.display = "flex";
-            } finally {
-                // UI 상태 복구 (로딩 끝)
+            // 통신 완료(응답 수신) 처리
+            xhr.onload = function() {
+                // 상태 원복
+                progressBar.classList.remove('animate-pulse');
                 btnAnalyze.disabled = false;
                 loadingOverlay.style.display = "none";
-            }
+
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        const data = JSON.parse(xhr.responseText);
+                        
+                        // 영상 재생
+                        resultVideo.src = `${baseUrl}${data.video_url}`;
+                        resultVideo.play();
+                        
+                        // 로그 렌더링
+                        renderLogs(data.logs);
+                    } catch (err) {
+                        console.error(err);
+                        alert("서버 응답 파싱 중 오류가 발생했습니다.");
+                        emptyState.style.display = "flex";
+                    }
+                } else {
+                    alert(`서버 분석 오류 (HTTP ${xhr.status})\nColab 서버 로그를 확인하세요.`);
+                    emptyState.style.display = "flex";
+                }
+            };
+
+            // 네트워크 오류 처리
+            xhr.onerror = function() {
+                alert("네트워크 통신 에러가 발생했습니다. URL을 확인하거나 서버 상태를 점검하세요.");
+                emptyState.style.display = "flex";
+                btnAnalyze.disabled = false;
+                loadingOverlay.style.display = "none";
+            };
+
+            // 전송 시작
+            xhr.send(formData);
         });
 
-        // JSON 로그 데이터를 읽어서 우측 패널에 HTML로 이쁘게 그려주는 함수
+        // 로그 렌더링 함수 (기존과 동일)
         function renderLogs(logs) {
             if (logs.length === 0) {
                 logContainer.innerHTML = `<p class="text-slate-500 text-center text-sm mt-10">해당 영상에서 탐지된 조류가 없습니다.</p>`;
@@ -179,7 +223,7 @@
                 `;
                 
                 log.detections.forEach(det => {
-                    let riskColor = det.distance_m < 250 ? "text-red-400" : "text-emerald-400"; // 250m 이내면 위험(빨강)
+                    let riskColor = det.distance_m < 250 ? "text-red-400" : "text-emerald-400";
                     htmlString += `
                         <div class="flex justify-between text-xs text-slate-300 py-1">
                             <span>객체 #${det.id} [${det.confidence}%]</span>
