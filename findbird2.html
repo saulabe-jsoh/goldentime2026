@@ -232,30 +232,25 @@
         }
 
         // 프레임 전송 로직
-        // 기존 640px에서 480px 또는 320px로 해상도 대폭 축소 (네트워크 전송량 감소)
-const TARGET_WIDTH = 480; 
+        function sendSingleFrame() {
+            if (!isAnalyzing || !ws || ws.readyState !== WebSocket.OPEN) return;
+            
+            const scale = TARGET_WIDTH / video.videoWidth;
+            captureCanvas.width = TARGET_WIDTH;
+            captureCanvas.height = video.videoHeight * scale;
+            
+            captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+            const base64Data = captureCanvas.toDataURL('image/jpeg', 0.6);
+            
+            // JSON 구성: 이미지 + 현재 UI에 선택된 줌 배율
+            const requestPayload = {
+                image: base64Data,
+                zoom: parseInt(zoomSelect.value)
+            };
 
-function sendSingleFrame() {
-    if (!isAnalyzing || !ws || ws.readyState !== WebSocket.OPEN) return;
-    
-    const scale = TARGET_WIDTH / video.videoWidth;
-    captureCanvas.width = TARGET_WIDTH;
-    captureCanvas.height = video.videoHeight * scale;
-    
-    captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
-    
-    // JPEG 화질을 기존 0.6(60%)에서 0.4(40%)로 더 낮춤
-    const base64Data = captureCanvas.toDataURL('image/jpeg', 0.4); 
-    
-    const requestPayload = {
-        image: base64Data,
-        zoom: parseInt(zoomSelect.value)
-    };
-
-    lastRequestTime = performance.now();
-    ws.send(JSON.stringify(requestPayload));
-}
-
+            lastRequestTime = performance.now();
+            ws.send(JSON.stringify(requestPayload));
+        }
     </script>
 </body>
 </html>
