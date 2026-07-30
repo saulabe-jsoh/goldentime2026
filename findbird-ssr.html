@@ -1,1 +1,220 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IBS-PAS (Real-time Streaming & Telemetry)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Pretendard', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        #video-container { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; overflow: hidden; border-radius: 0.5rem; border: 1px solid #334155; }
+        video { display: none; } /* 원본 숨김 */
+        #result-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        .log-panel::-webkit-scrollbar { width: 6px; }
+        .log-panel::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col p-6 items-center">
 
+    <div class="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- 좌측: 관제 뷰어 -->
+        <div class="lg:col-span-2 space-y-4">
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
+                <div>
+                    <h1 class="font-bold text-xl text-indigo-400">YOLOv11 실시간 스트리밍 관제</h1>
+                    <p class="text-xs text-slate-400">프레임 단위 전송 및 실시간 다중 정보 로깅</p>
+                </div>
+                <div id="status-badge" class="px-4 py-2 bg-slate-800 text-slate-400 text-sm font-bold rounded-full border border-slate-700">
+                    대기중
+                </div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex gap-3 items-end">
+                <div class="flex-grow">
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">1. 서버 URL (wss://)</label>
+                    <input type="text" id="ws-url-input" placeholder="wss://..." class="w-full px-4 py-2 bg-slate-950 text-white rounded-md border border-slate-700 text-sm">
+                </div>
+                <button id="btn-connect" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-md whitespace-nowrap">연결</button>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-wrap gap-4 items-end">
+                <div class="flex-grow">
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">2. 모의 영상 업로드</label>
+                    <input type="file" id="video-upload" accept="video/mp4" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-slate-800 file:text-slate-300 bg-slate-950 border border-slate-700 rounded-md">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">광학 배율 (실시간)</label>
+                    <select id="zoom-level" class="block w-full px-4 py-2 bg-slate-950 border border-slate-700 rounded-md text-sm text-white">
+                        <option value="15">x15 줌</option>
+                        <option value="30">x30 줌</option>
+                    </select>
+                </div>
+                <button id="btn-analyze" disabled class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-md disabled:opacity-50">스트리밍 시작</button>
+            </div>
+
+            <div id="video-container">
+                <video id="video" playsinline muted></video>
+                <img id="result-image" src="" alt="">
+            </div>
+        </div>
+
+        <!-- 우측: 실시간 상세 정보 로그 패널 -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl flex flex-col h-full overflow-hidden max-h-[750px]">
+            <div class="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
+                <h2 class="text-sm font-bold text-slate-200">
+                    <i class="fa-solid fa-radar text-indigo-400"></i> 실시간 탐지 로그
+                </h2>
+                <span id="fps-counter" class="text-xs text-emerald-400 font-mono">0 FPS</span>
+            </div>
+            
+            <div id="log-container" class="overflow-y-auto p-4 log-panel flex-grow space-y-2 text-xs font-mono">
+                <!-- 로그가 이곳에 쌓입니다 -->
+                <p class="text-slate-500 text-center mt-10">스트리밍을 시작하면 상세 정보가 기록됩니다.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const wsUrlInput = document.getElementById('ws-url-input');
+        const btnConnect = document.getElementById('btn-connect');
+        const videoUpload = document.getElementById('video-upload');
+        const btnAnalyze = document.getElementById('btn-analyze');
+        const zoomSelect = document.getElementById('zoom-level');
+        const fpsCounter = document.getElementById('fps-counter');
+        
+        const video = document.getElementById('video');
+        const resultImage = document.getElementById('result-image');
+        const logContainer = document.getElementById('log-container');
+        const statusBadge = document.getElementById('status-badge');
+
+        let ws = null;
+        let isAnalyzing = false;
+        let lastRequestTime = 0;
+        let logThrottleCounter = 0;
+        
+        const captureCanvas = document.createElement('canvas');
+        const captureCtx = captureCanvas.getContext('2d');
+        const TARGET_WIDTH = 480; // 스트리밍 최적화 해상도
+
+        function appendLog(frameId, det) {
+            const timeStr = new Date().toISOString().split('T')[1].slice(0, 8);
+            const isDanger = det.dist_m < 250;
+            
+            const logHTML = `
+                <div class="bg-slate-950 border ${isDanger ? 'border-red-900/50' : 'border-slate-800'} p-2 rounded flex flex-col gap-1 animate-fade-in">
+                    <div class="flex justify-between items-center border-b border-slate-800 pb-1">
+                        <span class="text-indigo-400 font-bold">[${timeStr}] Frame #${frameId}</span>
+                        <span class="${isDanger ? 'text-red-400 font-bold' : 'text-emerald-400'}">Dist: ${det.dist_m}m</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-slate-300 mt-1">
+                        <div>방위: <span class="text-amber-300">${det.sector}</span></div>
+                        <div>정확도: ${det.conf}%</div>
+                        <div>좌표: ${det.coord}</div>
+                        <div>크기: ${det.size_px}px</div>
+                        <div class="col-span-2 text-slate-500">화면 점유율: ${det.coverage}%</div>
+                    </div>
+                </div>
+            `;
+            
+            // 기존 로그 안내 멘트 제거
+            if (logContainer.children.length === 1 && logContainer.children[0].tagName === 'P') {
+                logContainer.innerHTML = '';
+            }
+            
+            logContainer.insertAdjacentHTML('beforeend', logHTML);
+            
+            // 최대 100개까지만 로그 유지 (메모리 관리)
+            if (logContainer.children.length > 100) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+            
+            // 자동 스크롤
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        btnConnect.addEventListener('click', () => {
+            const url = wsUrlInput.value.trim();
+            if (!url) return;
+
+            if (ws) ws.close();
+            statusBadge.textContent = "연결 시도 중...";
+            
+            try {
+                ws = new WebSocket(url);
+                ws.onopen = () => { statusBadge.textContent = "서버 연결됨"; statusBadge.className = "px-4 py-2 text-sm font-bold rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/20"; btnAnalyze.disabled = !video.src; };
+                
+                ws.onmessage = (event) => {
+                    if (!isAnalyzing) return;
+                    const data = JSON.parse(event.data);
+                    
+                    // 1. 이미지 업데이트
+                    resultImage.src = data.image;
+                    
+                    // 2. FPS 계산
+                    const now = performance.now();
+                    const fps = 1000 / (now - lastRequestTime);
+                    fpsCounter.textContent = `${fps.toFixed(1)} FPS`;
+                    
+                    // 3. 로그 업데이트 (너무 빠른 스크롤 방지를 위해 3프레임당 1번만 로그 출력)
+                    logThrottleCounter++;
+                    if (logThrottleCounter % 3 === 0 && data.detections.length > 0) {
+                        data.detections.forEach(det => appendLog(data.frame_id, det));
+                    }
+                    
+                    // 다음 프레임 전송
+                    requestAnimationFrame(sendSingleFrame);
+                };
+
+                ws.onclose = () => { statusBadge.textContent = "연결 끊김"; stopAnalysis(); };
+            } catch (error) {}
+        });
+
+        videoUpload.addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                video.src = URL.createObjectURL(e.target.files[0]);
+                video.load();
+                video.onloadeddata = () => { if (ws && ws.readyState === WebSocket.OPEN) btnAnalyze.disabled = false; };
+            }
+        });
+
+        btnAnalyze.addEventListener('click', () => {
+            if (isAnalyzing) stopAnalysis();
+            else startAnalysis();
+        });
+
+        function startAnalysis() {
+            isAnalyzing = true;
+            video.play();
+            btnAnalyze.textContent = "스트리밍 중지";
+            btnAnalyze.className = "px-6 py-2 bg-red-600 text-white text-sm font-bold rounded-md";
+            sendSingleFrame();
+        }
+
+        function stopAnalysis() {
+            isAnalyzing = false;
+            video.pause();
+            btnAnalyze.textContent = "스트리밍 시작";
+            btnAnalyze.className = "px-6 py-2 bg-emerald-600 text-white text-sm font-bold rounded-md";
+        }
+
+        function sendSingleFrame() {
+            if (!isAnalyzing || !ws || ws.readyState !== WebSocket.OPEN) return;
+            
+            const scale = TARGET_WIDTH / video.videoWidth;
+            captureCanvas.width = TARGET_WIDTH;
+            captureCanvas.height = video.videoHeight * scale;
+            captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+            
+            const payload = {
+                image: captureCanvas.toDataURL('image/jpeg', 0.5), // 화질 50%로 최적화
+                zoom: parseInt(zoomSelect.value)
+            };
+
+            lastRequestTime = performance.now();
+            ws.send(JSON.stringify(payload));
+        }
+    </script>
+</body>
+</html>
