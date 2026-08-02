@@ -3,363 +3,392 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IBS-PAS HUD Monitor</title>
+    <title>IBS-PAS (Bird Strike Warning HUD & Batch Engine) 2026-07-30</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
     <style>
-        :root {
-            --bg-color: #0b0c10;
-            --panel-bg: #1f2833;
-            --text-main: #c5c6c7;
-            --neon-green: #66fcf1;
-            --level1: #4caf50; /* Normal */
-            --level2: #ffeb3b; /* Caution */
-            --level3: #ff9800; /* Warning */
-            --level4: #f44336; /* Critical */
-        }
+        body { font-family: 'Pretendard', Courier, monospace; background-color: #0b0c10; color: #c5c6c7; }
         
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            font-family: 'Courier New', Courier, monospace;
-            margin: 0;
-            padding: 20px;
-        }
-
-        h1 {
-            text-align: center;
-            color: var(--neon-green);
-            text-shadow: 0 0 10px rgba(102, 252, 241, 0.5);
-            margin-bottom: 20px;
-        }
-
-        .dashboard {
-            display: grid;
-            grid-template-columns: 1fr 2fr;
-            gap: 20px;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        .panel {
-            background-color: var(--panel-bg);
-            border: 1px solid #45a29e;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        }
-
-        .panel-title {
-            font-size: 1.2em;
-            font-weight: bold;
-            color: var(--neon-green);
-            border-bottom: 1px solid #45a29e;
-            padding-bottom: 10px;
-            margin-bottom: 15px;
-        }
-
-        /* 컨트롤 패널 입력폼 */
-        .control-group {
-            margin-bottom: 15px;
-        }
-        label { display: block; margin-bottom: 5px; }
-        input, select, button {
-            width: 100%;
-            padding: 8px;
-            background: #0b0c10;
-            color: #fff;
-            border: 1px solid #45a29e;
-            border-radius: 4px;
-            box-sizing: border-box;
-            font-family: inherit;
-        }
-        button {
-            background: #45a29e;
-            color: #000;
-            font-weight: bold;
-            cursor: pointer;
-            margin-top: 10px;
-            transition: all 0.3s;
-        }
-        button:hover { background: var(--neon-green); }
-
-        /* 데미지 바 (위험도 게이지) */
-        .gauge-container {
-            position: relative;
-            height: 40px;
-            background: #333;
-            border-radius: 20px;
-            overflow: hidden;
-            margin: 30px 0;
-            border: 2px solid #555;
-        }
+        /* Video & Overlays */
+        #video-container { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; overflow: hidden; border-radius: 0.5rem; border: 1px solid #1f2833; box-shadow: 0 4px 6px rgba(0,0,0,0.5); }
+        video { width: 100%; height: 100%; outline: none; }
         
-        .gauge-zones {
-            display: flex;
-            height: 100%;
-            width: 100%;
-            position: absolute;
-        }
+        #loading-overlay { display: none; position: absolute; inset: 0; background: rgba(11, 12, 16, 0.9); z-index: 50; flex-direction: column; align-items: center; justify-content: center; }
         
-        /* 1000m(좌) -> 0m(우) 구조 */
-        .zone-l1 { width: 25%; background: rgba(76, 175, 80, 0.3); } /* 1000~750 */
-        .zone-l2 { width: 25%; background: rgba(255, 235, 59, 0.3); } /* 750~500 */
-        .zone-l3 { width: 30%; background: rgba(255, 152, 0, 0.3); }  /* 500~Rc(약200) */
+        /* Scrollbar */
+        .log-panel::-webkit-scrollbar { width: 6px; }
+        .log-panel::-webkit-scrollbar-thumb { background: #45a29e; border-radius: 3px; }
+        
+        /* Damage Bar (Gauge) */
+        .gauge-container { position: relative; height: 30px; background: #1f2833; border-radius: 15px; overflow: hidden; border: 2px solid #333; margin-top: 15px; }
+        .gauge-zones { display: flex; height: 100%; width: 100%; position: absolute; }
+        .zone-l1 { width: 25%; background: rgba(76, 175, 80, 0.2); } /* 1000~750 */
+        .zone-l2 { width: 25%; background: rgba(255, 235, 59, 0.2); } /* 750~500 */
+        .zone-l3 { width: 30%; background: rgba(255, 152, 0, 0.3); }  /* 500~Rc */
         .zone-l4 { width: 20%; background: rgba(244, 67, 54, 0.5); }  /* Rc~0 */
-
+        
         .gauge-marker {
-            position: absolute;
-            top: 0;
-            height: 100%;
-            width: 4px;
-            background: #fff;
-            box-shadow: 0 0 10px #fff;
-            transition: left 0.3s ease-out;
-            z-index: 10;
+            position: absolute; top: 0; height: 100%; width: 4px;
+            background: #fff; box-shadow: 0 0 12px #fff, 0 0 8px #66fcf1;
+            transition: left 0.2s ease-out; z-index: 10;
         }
 
-        /* 실시간 상태 텍스트 */
-        .status-display {
-            display: flex;
-            justify-content: space-between;
-            font-size: 1.5em;
-            font-weight: bold;
-            margin-top: 20px;
-            padding: 15px;
-            background: #000;
-            border-radius: 5px;
-        }
-        .status-value { text-shadow: 0 0 5px currentColor; }
-
-        /* 누적 로그 테이블 */
-        .log-container {
-            max-height: 250px;
-            overflow-y: auto;
-            background: #000;
-            padding: 10px;
-            border: 1px solid #333;
-        }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #333; font-size: 0.9em; }
-        th { color: var(--neon-green); position: sticky; top: 0; background: #000; }
-        .log-l3 { color: var(--level3); }
-        .log-l4 { color: var(--level4); font-weight: bold; background: rgba(244, 67, 54, 0.1); }
+        /* Status Text Glow */
+        .glow-text { text-shadow: 0 0 8px currentColor; }
     </style>
 </head>
-<body>
+<body class="min-h-screen flex flex-col p-6 items-center">
 
-    <h1>IBS-PAS (Bird Strike Warning HUD)</h1>
-
-    <div class="dashboard">
-        <!-- 좌측: 시뮬레이션 및 데이터 입력 -->
-        <div class="panel">
-            <div class="panel-title">System Controls & Sensor Input</div>
+    <div class="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- 좌측: 컨트롤 및 뷰어 패널 -->
+        <div class="lg:col-span-2 space-y-4">
             
-            <div class="control-group">
-                <label>Flight State (운항 상태):</label>
-                <select id="flightState">
-                    <option value="CRUISE">순항 (Cruise - 127kts)</option>
-                    <option value="TAKEOFF">이·착륙/호버링 (Takeoff - 87kts)</option>
-                </select>
-            </div>
-            
-            <div class="control-group">
-                <label>Target Pixel Size (S_px): <span id="pxValue">20</span> px</label>
-                <input type="range" id="targetPx" min="5" max="300" value="20">
+            <div class="bg-[#1f2833] border border-[#45a29e] p-4 rounded-xl flex justify-between items-center shadow-lg">
+                <div>
+                    <h1 class="font-bold text-xl text-[#66fcf1] glow-text">IBS-PAS (위기 경보 HUD 모니터 및 배치 엔진)</h1>
+                    <p class="text-xs text-slate-400 mt-1">동적 보호영역(Rc) 산출 및 4단계 공중 충돌 확률 위험 분류 시스템</p>
+                </div>
             </div>
 
-            <div class="control-group">
-                <label>Optical Zoom (Z): <span id="zoomValue">15</span>x</label>
-                <input type="range" id="zoomLevel" min="1" max="30" value="15">
+            <!-- 서버 URL 입력 -->
+            <div class="bg-[#1f2833] border border-slate-700 p-4 rounded-xl">
+                <label class="block text-xs text-slate-400 font-semibold mb-1">1. AI 분석 서버 URL (https://...)</label>
+                <input type="text" id="api-url-input" placeholder="ngrok 주소를 입력하세요 (https://...)" class="w-full px-4 py-2 bg-[#0b0c10] text-[#c5c6c7] rounded-md border border-slate-600 text-sm focus:outline-none focus:border-[#66fcf1]">
             </div>
 
-            <button id="simBtn">Start Real-time Simulation</button>
+            <!-- 운항 상태 및 영상 업로드 -->
+            <div class="bg-[#1f2833] border border-slate-700 p-4 rounded-xl flex flex-wrap gap-4 items-end">
+                <div class="flex-grow">
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">2. 분석할 블랙박스/HUD 영상 (.mp4)</label>
+                    <input type="file" id="video-upload" accept="video/mp4" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-slate-700 file:text-[#66fcf1] hover:file:bg-slate-600 bg-[#0b0c10] border border-slate-600 rounded-md cursor-pointer">
+                </div>
+                
+                <!-- [알고리즘 추가] 비행 상태 (Rc 가변 인자) -->
+                <div>
+                    <label class="block text-xs text-[#66fcf1] font-semibold mb-1">운항 상태 (Flight State)</label>
+                    <select id="flight-state" class="block w-full px-4 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none focus:border-[#66fcf1]">
+                        <option value="CRUISE">순항 (Cruise - 127kts)</option>
+                        <option value="TAKEOFF">이·착륙/호버링 (Takeoff - 87kts)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">광학 배율 (Zoom)</label>
+                    <select id="zoom-level" class="block w-full px-4 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none">
+                        <option value="15">15x</option>
+                        <option value="30">30x</option>
+                    </select>
+                </div>
+                
+                <button id="btn-analyze" disabled class="px-6 py-2 bg-[#45a29e] hover:bg-[#66fcf1] hover:text-black text-[#0b0c10] text-sm font-bold rounded-md disabled:opacity-50 disabled:bg-slate-700 disabled:text-slate-500 transition-colors whitespace-nowrap">
+                    전송 및 분석
+                </button>
+            </div>
+
+            <!-- 영상 플레이어 -->
+            <div id="video-container">
+                <video id="result-video" controls playsinline></video>
+                
+                <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 z-0 bg-[#0b0c10]">
+                    <i class="fa-solid fa-plane-circle-exclamation text-4xl mb-3 text-slate-600"></i>
+                    <p class="text-sm">영상을 전송하면 AI가 분석 후 위험 레벨 HUD를 반환합니다.</p>
+                </div>
+
+                <!-- 기존 로딩 프로그레스바 유지 -->
+                <div id="loading-overlay">
+                    <i id="loading-spinner" class="fa-solid fa-cloud-arrow-up text-[#66fcf1] text-5xl mb-4"></i>
+                    <p id="loading-text" class="text-white font-bold mb-2">영상을 서버로 전송 중입니다...</p>
+                    <div class="w-64 bg-slate-800 rounded-full h-3 mb-2 overflow-hidden border border-slate-700 shadow-inner">
+                        <div id="progress-bar" class="bg-gradient-to-r from-[#45a29e] to-[#66fcf1] h-3 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+                    </div>
+                    <p id="progress-text" class="text-[#66fcf1] font-mono font-bold text-sm">0%</p>
+                </div>
+            </div>
+
+            <!-- [알고리즘 추가] 실시간 HUD 모니터 (영상과 동기화됨) -->
+            <div class="bg-[#0b0c10] border border-slate-700 p-5 rounded-xl shadow-inner">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-sm font-bold text-[#66fcf1] uppercase"><i class="fa-solid fa-gauge-high mr-2"></i>Real-time Threat Monitor</h3>
+                </div>
+                
+                <!-- Status Texts -->
+                <div class="flex justify-between items-center bg-[#1f2833] p-4 rounded-lg border border-[#45a29e]" id="hud-status-box">
+                    <div class="text-center">
+                        <div class="text-xs text-slate-400 mb-1">탐지 거리 (Distance)</div>
+                        <div id="hud-dist" class="text-2xl font-bold font-mono text-slate-200 glow-text">-- m</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-xs text-slate-400 mb-1">동적 임계값 (Rc)</div>
+                        <div id="hud-rc" class="text-2xl font-bold font-mono text-slate-200 glow-text">192 m</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-xs text-slate-400 mb-1">위험 단계 (Level)</div>
+                        <div id="hud-level" class="text-2xl font-bold text-slate-200 glow-text">Standby</div>
+                    </div>
+                </div>
+
+                <!-- 데미지 바 -->
+                <div class="gauge-container">
+                    <div class="gauge-zones">
+                        <div class="zone-l1"></div>
+                        <div class="zone-l2"></div>
+                        <div class="zone-l3"></div>
+                        <div class="zone-l4"></div>
+                    </div>
+                    <div id="hud-marker" class="gauge-marker" style="left: 0%;"></div>
+                </div>
+                <div class="flex justify-between text-[10px] text-slate-500 mt-1 px-1 font-mono">
+                    <span>1000m (Safe)</span>
+                    <span>750m</span>
+                    <span>500m (Boundary)</span>
+                    <span>Rc (Critical)</span>
+                    <span>0m (Impact)</span>
+                </div>
+            </div>
         </div>
 
-        <!-- 우측: 모니터링 계기판 및 로그 -->
-        <div class="panel">
-            <div class="panel-title">Collision Risk Monitor (데미지 바)</div>
+        <!-- 우측: 누적 위기 경보 로그 -->
+        <div class="bg-[#1f2833] border border-[#45a29e] rounded-xl flex flex-col h-full overflow-hidden max-h-[850px] shadow-lg">
+            <div class="p-4 border-b border-[#45a29e] bg-[#0b0c10] flex justify-between items-center">
+                <h2 class="text-sm font-bold text-[#66fcf1]">
+                    <i class="fa-solid fa-triangle-exclamation mr-2"></i> 누적 위기 경보 로그
+                </h2>
+                <span id="log-count" class="text-xs text-black font-bold bg-[#45a29e] px-2 py-1 rounded">데이터 대기중</span>
+            </div>
             
-            <!-- 데미지 바 (1000m -> 0m) -->
-            <div class="gauge-container">
-                <div class="gauge-zones">
-                    <div class="zone-l1"></div>
-                    <div class="zone-l2"></div>
-                    <div class="zone-l3"></div>
-                    <div class="zone-l4"></div>
-                </div>
-                <div class="gauge-marker" id="distanceMarker" style="left: 0%;"></div>
-            </div>
-
-            <!-- 실시간 수치 -->
-            <div class="status-display" id="statusBox">
-                <div>
-                    <div>Distance</div>
-                    <div class="status-value" id="dispDist">999 m</div>
-                </div>
-                <div>
-                    <div>Critical (Rc)</div>
-                    <div class="status-value" id="dispRc">192 m</div>
-                </div>
-                <div>
-                    <div>Risk Level</div>
-                    <div class="status-value" id="dispLevel">Level 1</div>
-                </div>
-            </div>
-
-            <!-- 누적 경보 로그 -->
-            <div class="panel-title" style="margin-top: 30px;">Alert History Log (Level 3 & 4)</div>
-            <div class="log-container">
-                <table id="logTable">
-                    <thead>
-                        <tr>
-                            <th>Time</th>
-                            <th>Level</th>
-                            <th>State</th>
-                            <th>Distance</th>
-                            <th>Rc Thresh</th>
-                        </tr>
-                    </thead>
-                    <tbody id="logBody">
-                        <!-- Logs will appear here -->
-                    </tbody>
-                </table>
+            <div class="overflow-y-auto p-4 log-panel h-full bg-[#0b0c10]" id="log-container">
+                <p class="text-slate-500 text-center text-sm mt-10">영상 분석이 완료되면 위험(Level 3, 4) 상황 누적 로그가 이곳에 기록됩니다.</p>
             </div>
         </div>
     </div>
 
     <script>
-        // DOM Elements
-        const flightStateSel = document.getElementById('flightState');
-        const targetPxIn = document.getElementById('targetPx');
-        const zoomLevelIn = document.getElementById('zoomLevel');
-        const pxValueDisp = document.getElementById('pxValue');
-        const zoomValueDisp = document.getElementById('zoomValue');
-        const simBtn = document.getElementById('simBtn');
+        // 전역 변수
+        let serverLogs = []; 
+        let lastPlayedLogIndex = -1;
+
+        // 기존 폼 엘리먼트
+        const apiUrlInput = document.getElementById('api-url-input');
+        const videoUpload = document.getElementById('video-upload');
+        const zoomSelect = document.getElementById('zoom-level');
+        const flightStateSel = document.getElementById('flight-state');
+        const btnAnalyze = document.getElementById('btn-analyze');
         
-        const dispDist = document.getElementById('dispDist');
-        const dispRc = document.getElementById('dispRc');
-        const dispLevel = document.getElementById('dispLevel');
-        const statusBox = document.getElementById('statusBox');
-        const distanceMarker = document.getElementById('distanceMarker');
-        const logBody = document.getElementById('logBody');
+        const resultVideo = document.getElementById('result-video');
+        const emptyState = document.getElementById('empty-state');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const loadingText = document.getElementById('loading-text');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        
+        const logContainer = document.getElementById('log-container');
+        const logCount = document.getElementById('log-count');
 
-        let simInterval = null;
-        let lastLoggedLevel = 0; // 중복 로그 방지용
+        // 새로 추가된 HUD 엘리먼트
+        const hudStatusBox = document.getElementById('hud-status-box');
+        const hudDist = document.getElementById('hud-dist');
+        const hudRc = document.getElementById('hud-rc');
+        const hudLevel = document.getElementById('hud-level');
+        const hudMarker = document.getElementById('hud-marker');
 
-        // 핵심 알고리즘: 거리 역산 및 위험 평가
-        function evaluateSystem() {
-            const state = flightStateSel.value;
-            const spx = parseFloat(targetPxIn.value);
-            const zoom = parseFloat(zoomLevelIn.value);
+        let selectedFile = null;
 
-            // 1. 단안 비전 거리 역산 수식
-            let distance = 500 * (100 / spx) * (zoom / 15);
-            if (distance > 1000) distance = 1000; // UI 표출을 위한 Max 캡
+        videoUpload.addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                selectedFile = e.target.files[0];
+                btnAnalyze.disabled = false;
+            }
+        });
 
-            // 2. 운항 상태별 동적 보호영역(Rc) 할당
-            const Rc = (state === 'CRUISE') ? 192 : 220;
-
-            // 3. 4단계 위험 레벨 이산화
-            let level = 1, levelName = "Level 1 (Normal)", color = "var(--level1)", cssClass = "";
+        // [핵심] 위험 레벨 산출 알고리즘 적용
+        function evaluateRisk(distance, state) {
+            const Rc = (state === 'CRUISE') ? 192 : 220; // 동적 보호영역 임계값
+            let level = 1, levelName = "L1 (Normal)", color = "#4caf50", cssClass = "border-green-800 text-green-400";
             
             if (distance <= Rc) {
-                level = 4;
-                levelName = "Level 4 (Critical/RA)";
-                color = "var(--level4)";
-                cssClass = "log-l4";
+                level = 4; levelName = "L4 (Critical/RA)"; color = "#f44336"; cssClass = "border-red-600 bg-red-900/30 text-red-400";
             } else if (distance <= 500) {
-                level = 3;
-                levelName = "Level 3 (Warning)";
-                color = "var(--level3)";
-                cssClass = "log-l3";
+                level = 3; levelName = "L3 (Warning)"; color = "#ff9800"; cssClass = "border-orange-600 bg-orange-900/20 text-orange-400";
             } else if (distance <= 750) {
-                level = 2;
-                levelName = "Level 2 (Caution)";
-                color = "var(--level2)";
+                level = 2; levelName = "L2 (Caution)"; color = "#ffeb3b"; cssClass = "border-yellow-700 text-yellow-400";
             }
 
-            // 4. UI 게이지바 (데미지 바) 업데이트 (1000m가 0%, 0m가 100% 위치)
-            const gaugePercent = ((1000 - distance) / 1000) * 100;
-            distanceMarker.style.left = `${gaugePercent}%`;
-
-            // 5. 텍스트 디스플레이 업데이트
-            dispDist.innerText = distance.toFixed(1) + " m";
-            dispRc.innerText = Rc + " m";
-            dispLevel.innerText = levelName;
-            
-            statusBox.style.color = color;
-            dispDist.style.color = color;
-            dispLevel.style.color = color;
-
-            // 6. 3단계 및 4단계 누적 로그 기록 (상태가 변경되었을 때만 기록)
-            if (level >= 3 && level !== lastLoggedLevel) {
-                addLog(levelName, state, distance.toFixed(1), Rc, cssClass);
-            }
-            
-            // 2단계 이하로 떨어지면 로그 리셋(새로운 위협 포착을 위해)
-            if (level < 3) lastLoggedLevel = 0; 
-            else lastLoggedLevel = level;
+            return { Rc, level, levelName, color, cssClass };
         }
 
-        // 테이블 로그 추가 함수
-        function addLog(levelName, state, dist, rc, cssClass) {
-            const now = new Date();
-            const timeStr = now.getHours().toString().padStart(2,'0') + ":" + 
-                            now.getMinutes().toString().padStart(2,'0') + ":" + 
-                            now.getSeconds().toString().padStart(2,'0') + "." + 
-                            now.getMilliseconds().toString().padStart(3,'0').substring(0,2);
+        // 실시간 HUD 업데이트 (비디오 시간에 맞춰 데미지바 이동)
+        function updateHUD(distance) {
+            const state = flightStateSel.value;
+            // 1000m 캡 적용
+            let safeDistance = (distance > 1000) ? 1000 : distance;
             
-            const tr = document.createElement('tr');
-            tr.className = cssClass;
-            tr.innerHTML = `
-                <td>${timeStr}</td>
-                <td>${levelName}</td>
-                <td>${state}</td>
-                <td>${dist} m</td>
-                <td>${rc} m</td>
-            `;
-            logBody.prepend(tr); // 최신 로그를 위로
+            const { Rc, levelName, color } = evaluateRisk(safeDistance, state);
+
+            // 데미지 바 위치 산출 (1000m: 0%, 0m: 100%)
+            let gaugePercent = ((1000 - safeDistance) / 1000) * 100;
+            
+            hudMarker.style.left = `${gaugePercent}%`;
+            hudDist.innerText = safeDistance >= 1000 ? ">1000 m" : safeDistance.toFixed(1) + " m";
+            hudRc.innerText = Rc + " m";
+            hudLevel.innerText = levelName;
+
+            hudDist.style.color = color;
+            hudLevel.style.color = color;
+            hudStatusBox.style.borderColor = color;
         }
 
-        // 이벤트 리스너 (수동 조작 시)
-        targetPxIn.addEventListener('input', (e) => {
-            pxValueDisp.innerText = e.target.value;
-            evaluateSystem();
-        });
-        zoomLevelIn.addEventListener('input', (e) => {
-            zoomValueDisp.innerText = e.target.value;
-            evaluateSystem();
-        });
-        flightStateSel.addEventListener('change', evaluateSystem);
+        btnAnalyze.addEventListener('click', () => {
+            const baseUrl = apiUrlInput.value.trim();
+            if (!baseUrl.startsWith('http')) return alert('올바른 서버 URL(https://...)을 입력하세요.');
+            if (!selectedFile) return alert('영상을 업로드하세요.');
 
-        // 시뮬레이션 버튼 (랜덤하게 새가 다가오는 상황 연출)
-        simBtn.addEventListener('click', () => {
-            if (simInterval) {
-                clearInterval(simInterval);
-                simInterval = null;
-                simBtn.innerText = "Start Real-time Simulation";
-                simBtn.style.background = "#45a29e";
+            btnAnalyze.disabled = true;
+            emptyState.style.display = "none";
+            loadingOverlay.style.display = "flex";
+            
+            progressBar.style.width = "0%";
+            progressBar.classList.remove('animate-pulse');
+            progressText.textContent = "0%";
+            loadingText.textContent = "영상을 서버로 전송 중입니다...";
+            loadingSpinner.className = "fa-solid fa-cloud-arrow-up text-[#66fcf1] text-5xl mb-4";
+            
+            logContainer.innerHTML = ''; 
+            logCount.textContent = '분석 중...';
+            resultVideo.src = "";
+            serverLogs = [];
+            updateHUD(1000); // 초기화
+
+            const formData = new FormData();
+            formData.append("file", selectedFile);
+            formData.append("zoom", zoomSelect.value);
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `${baseUrl}/analyze`, true);
+
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percentComplete = Math.round((e.loaded / e.total) * 100);
+                    progressBar.style.width = percentComplete + '%';
+                    progressText.textContent = percentComplete + '%';
+
+                    if (percentComplete >= 100) {
+                        loadingText.textContent = "전송 완료! AI가 위협 객체를 분석 중입니다...";
+                        loadingSpinner.className = "fa-solid fa-gear fa-spin text-[#45a29e] text-5xl mb-4";
+                        progressBar.classList.add('animate-pulse');
+                    }
+                }
+            });
+
+            xhr.onload = function() {
+                progressBar.classList.remove('animate-pulse');
+                btnAnalyze.disabled = false;
+                loadingOverlay.style.display = "none";
+
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        const data = JSON.parse(xhr.responseText);
+                        serverLogs = data.logs || [];
+                        
+                        // 영상 렌더링 및 자동 재생
+                        resultVideo.src = `${baseUrl}${data.video_url}`;
+                        resultVideo.play();
+                        
+                        // 누적 로그 테이블 렌더링 (Level 3, 4 중점)
+                        renderCumulativeLogs(serverLogs);
+                    } catch (err) {
+                        console.error(err);
+                        alert("서버 응답 파싱 중 오류가 발생했습니다.");
+                        emptyState.style.display = "flex";
+                    }
+                } else {
+                    alert(`서버 분석 오류 (HTTP ${xhr.status})\nColab 로그를 확인하세요.`);
+                    emptyState.style.display = "flex";
+                }
+            };
+
+            xhr.onerror = function() {
+                alert("네트워크 통신 에러가 발생했습니다.");
+                emptyState.style.display = "flex";
+                btnAnalyze.disabled = false;
+                loadingOverlay.style.display = "none";
+            };
+
+            xhr.send(formData);
+        });
+
+        // [비디오 재생 동기화 이벤트] 영상 재생 중 HUD 업데이트
+        resultVideo.addEventListener('timeupdate', () => {
+            const currentTime = resultVideo.currentTime;
+            
+            if (serverLogs.length === 0) return;
+
+            // 현재 비디오 시간과 가장 가까운 서버 로그 프레임 찾기
+            const currentLog = serverLogs.reduce((prev, curr) => 
+                Math.abs(curr.time_sec - currentTime) < Math.abs(prev.time_sec - currentTime) ? curr : prev
+            );
+            
+            // 시간 오차가 0.5초 이내이고, 탐지된 조류가 있을 때
+            if (Math.abs(currentLog.time_sec - currentTime) < 0.5 && currentLog.detections.length > 0) {
+                // 여러 마리 중 가장 가까운 놈(가장 위험)을 타겟으로 잡음
+                const minDist = Math.min(...currentLog.detections.map(d => d.distance_m));
+                updateHUD(minDist);
             } else {
-                simBtn.innerText = "Stop Simulation";
-                simBtn.style.background = "var(--level4)";
-                
-                // 표적 크기를 점진적으로 키워서 거리가 가까워지게 만듦
-                let currentPx = 10; 
-                targetPxIn.value = currentPx;
-                
-                simInterval = setInterval(() => {
-                    // 픽셀이 점점 커짐 (새가 다가옴) + 약간의 흔들림(Ping-pong effect 구현)
-                    currentPx += (Math.random() * 4); 
-                    if(currentPx > 300) currentPx = 10; // 충돌 후 초기화
-                    
-                    targetPxIn.value = currentPx.toFixed(1);
-                    pxValueDisp.innerText = currentPx.toFixed(1);
-                    evaluateSystem();
-                }, 100); // 100ms 마다 갱신 (10 FPS 느낌)
+                updateHUD(1000); // 1000m 밖 (안전)으로 처리
             }
         });
 
-        // 초기 1회 실행
-        evaluateSystem();
+        // [알고리즘 연동] 누적 위기 경보 로그 렌더링
+        function renderCumulativeLogs(logs) {
+            const state = flightStateSel.value;
+            let htmlString = `<div class="space-y-3">`;
+            let crisisCount = 0;
+
+            logs.forEach(log => {
+                if(log.detections.length === 0) return;
+
+                // 해당 프레임에서 가장 짧은 거리 추출
+                const minDist = Math.min(...log.detections.map(d => d.distance_m));
+                const risk = evaluateRisk(minDist, state);
+                
+                // [필터링] L3(Warning), L4(Critical) 위기 상황만 누적 로그로 강조해서 노출
+                if (risk.level >= 3) {
+                    crisisCount++;
+                    htmlString += `
+                        <div class="border ${risk.cssClass} p-3 rounded-lg flex items-center justify-between">
+                            <div>
+                                <div class="text-xs text-slate-300 font-mono mb-1"><i class="fa-regular fa-clock"></i> Video: ${log.time_sec}s</div>
+                                <div class="font-bold text-sm glow-text">${risk.levelName}</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-[10px] text-slate-400">Rc: ${risk.Rc}m | State: ${state}</div>
+                                <div class="font-bold text-lg glow-text">${minDist.toFixed(1)} m</div>
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+
+            htmlString += `</div>`;
+
+            if (crisisCount === 0) {
+                logContainer.innerHTML = `<p class="text-emerald-400 text-center text-sm mt-10"><i class="fa-solid fa-shield-check text-2xl mb-2"></i><br>해당 영상에서 확인된 충돌 위협(L3, L4)이 없습니다.</p>`;
+                logCount.textContent = `위협 0건`;
+            } else {
+                logContainer.innerHTML = htmlString;
+                logCount.textContent = `위험 누적: ${crisisCount}건`;
+                logCount.classList.remove('bg-[#45a29e]', 'text-black');
+                logCount.classList.add('bg-red-600', 'text-white', 'animate-pulse');
+            }
+        }
+
+        // 운항 상태가 바뀔 때 즉시 HUD를 다시 계산
+        flightStateSel.addEventListener('change', () => {
+            updateHUD(1000); 
+            if(serverLogs.length > 0) renderCumulativeLogs(serverLogs);
+        });
+
     </script>
 </body>
 </html>
