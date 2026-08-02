@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IBS-PAS HUD Monitor</title>
+    <style>
+        :root {
+            --bg-color: #0b0c10;
+            --panel-bg: #1f2833;
+            --text-main: #c5c6c7;
+            --neon-green: #66fcf1;
+            --level1: #4caf50; /* Normal */
+            --level2: #ffeb3b; /* Caution */
+            --level3: #ff9800; /* Warning */
+            --level4: #f44336; /* Critical */
+        }
+        
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            color: var(--neon-green);
+            text-shadow: 0 0 10px rgba(102, 252, 241, 0.5);
+            margin-bottom: 20px;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .panel {
+            background-color: var(--panel-bg);
+            border: 1px solid #45a29e;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        .panel-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: var(--neon-green);
+            border-bottom: 1px solid #45a29e;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        /* 컨트롤 패널 입력폼 */
+        .control-group {
+            margin-bottom: 15px;
+        }
+        label { display: block; margin-bottom: 5px; }
+        input, select, button {
+            width: 100%;
+            padding: 8px;
+            background: #0b0c10;
+            color: #fff;
+            border: 1px solid #45a29e;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+        button {
+            background: #45a29e;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: all 0.3s;
+        }
+        button:hover { background: var(--neon-green); }
+
+        /* 데미지 바 (위험도 게이지) */
+        .gauge-container {
+            position: relative;
+            height: 40px;
+            background: #333;
+            border-radius: 20px;
+            overflow: hidden;
+            margin: 30px 0;
+            border: 2px solid #555;
+        }
+        
+        .gauge-zones {
+            display: flex;
+            height: 100%;
+            width: 100%;
+            position: absolute;
+        }
+        
+        /* 1000m(좌) -> 0m(우) 구조 */
+        .zone-l1 { width: 25%; background: rgba(76, 175, 80, 0.3); } /* 1000~750 */
+        .zone-l2 { width: 25%; background: rgba(255, 235, 59, 0.3); } /* 750~500 */
+        .zone-l3 { width: 30%; background: rgba(255, 152, 0, 0.3); }  /* 500~Rc(약200) */
+        .zone-l4 { width: 20%; background: rgba(244, 67, 54, 0.5); }  /* Rc~0 */
+
+        .gauge-marker {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            width: 4px;
+            background: #fff;
+            box-shadow: 0 0 10px #fff;
+            transition: left 0.3s ease-out;
+            z-index: 10;
+        }
+
+        /* 실시간 상태 텍스트 */
+        .status-display {
+            display: flex;
+            justify-content: space-between;
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-top: 20px;
+            padding: 15px;
+            background: #000;
+            border-radius: 5px;
+        }
+        .status-value { text-shadow: 0 0 5px currentColor; }
+
+        /* 누적 로그 테이블 */
+        .log-container {
+            max-height: 250px;
+            overflow-y: auto;
+            background: #000;
+            padding: 10px;
+            border: 1px solid #333;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #333; font-size: 0.9em; }
+        th { color: var(--neon-green); position: sticky; top: 0; background: #000; }
+        .log-l3 { color: var(--level3); }
+        .log-l4 { color: var(--level4); font-weight: bold; background: rgba(244, 67, 54, 0.1); }
+    </style>
+</head>
+<body>
+
+    <h1>IBS-PAS (Bird Strike Warning HUD)</h1>
+
+    <div class="dashboard">
+        <!-- 좌측: 시뮬레이션 및 데이터 입력 -->
+        <div class="panel">
+            <div class="panel-title">System Controls & Sensor Input</div>
+            
+            <div class="control-group">
+                <label>Flight State (운항 상태):</label>
+                <select id="flightState">
+                    <option value="CRUISE">순항 (Cruise - 127kts)</option>
+                    <option value="TAKEOFF">이·착륙/호버링 (Takeoff - 87kts)</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Target Pixel Size (S_px): <span id="pxValue">20</span> px</label>
+                <input type="range" id="targetPx" min="5" max="300" value="20">
+            </div>
+
+            <div class="control-group">
+                <label>Optical Zoom (Z): <span id="zoomValue">15</span>x</label>
+                <input type="range" id="zoomLevel" min="1" max="30" value="15">
+            </div>
+
+            <button id="simBtn">Start Real-time Simulation</button>
+        </div>
+
+        <!-- 우측: 모니터링 계기판 및 로그 -->
+        <div class="panel">
+            <div class="panel-title">Collision Risk Monitor (데미지 바)</div>
+            
+            <!-- 데미지 바 (1000m -> 0m) -->
+            <div class="gauge-container">
+                <div class="gauge-zones">
+                    <div class="zone-l1"></div>
+                    <div class="zone-l2"></div>
+                    <div class="zone-l3"></div>
+                    <div class="zone-l4"></div>
+                </div>
+                <div class="gauge-marker" id="distanceMarker" style="left: 0%;"></div>
+            </div>
+
+            <!-- 실시간 수치 -->
+            <div class="status-display" id="statusBox">
+                <div>
+                    <div>Distance</div>
+                    <div class="status-value" id="dispDist">999 m</div>
+                </div>
+                <div>
+                    <div>Critical (Rc)</div>
+                    <div class="status-value" id="dispRc">192 m</div>
+                </div>
+                <div>
+                    <div>Risk Level</div>
+                    <div class="status-value" id="dispLevel">Level 1</div>
+                </div>
+            </div>
+
+            <!-- 누적 경보 로그 -->
+            <div class="panel-title" style="margin-top: 30px;">Alert History Log (Level 3 & 4)</div>
+            <div class="log-container">
+                <table id="logTable">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Level</th>
+                            <th>State</th>
+                            <th>Distance</th>
+                            <th>Rc Thresh</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logBody">
+                        <!-- Logs will appear here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const flightStateSel = document.getElementById('flightState');
+        const targetPxIn = document.getElementById('targetPx');
+        const zoomLevelIn = document.getElementById('zoomLevel');
+        const pxValueDisp = document.getElementById('pxValue');
+        const zoomValueDisp = document.getElementById('zoomValue');
+        const simBtn = document.getElementById('simBtn');
+        
+        const dispDist = document.getElementById('dispDist');
+        const dispRc = document.getElementById('dispRc');
+        const dispLevel = document.getElementById('dispLevel');
+        const statusBox = document.getElementById('statusBox');
+        const distanceMarker = document.getElementById('distanceMarker');
+        const logBody = document.getElementById('logBody');
+
+        let simInterval = null;
+        let lastLoggedLevel = 0; // 중복 로그 방지용
+
+        // 핵심 알고리즘: 거리 역산 및 위험 평가
+        function evaluateSystem() {
+            const state = flightStateSel.value;
+            const spx = parseFloat(targetPxIn.value);
+            const zoom = parseFloat(zoomLevelIn.value);
+
+            // 1. 단안 비전 거리 역산 수식
+            let distance = 500 * (100 / spx) * (zoom / 15);
+            if (distance > 1000) distance = 1000; // UI 표출을 위한 Max 캡
+
+            // 2. 운항 상태별 동적 보호영역(Rc) 할당
+            const Rc = (state === 'CRUISE') ? 192 : 220;
+
+            // 3. 4단계 위험 레벨 이산화
+            let level = 1, levelName = "Level 1 (Normal)", color = "var(--level1)", cssClass = "";
+            
+            if (distance <= Rc) {
+                level = 4;
+                levelName = "Level 4 (Critical/RA)";
+                color = "var(--level4)";
+                cssClass = "log-l4";
+            } else if (distance <= 500) {
+                level = 3;
+                levelName = "Level 3 (Warning)";
+                color = "var(--level3)";
+                cssClass = "log-l3";
+            } else if (distance <= 750) {
+                level = 2;
+                levelName = "Level 2 (Caution)";
+                color = "var(--level2)";
+            }
+
+            // 4. UI 게이지바 (데미지 바) 업데이트 (1000m가 0%, 0m가 100% 위치)
+            const gaugePercent = ((1000 - distance) / 1000) * 100;
+            distanceMarker.style.left = `${gaugePercent}%`;
+
+            // 5. 텍스트 디스플레이 업데이트
+            dispDist.innerText = distance.toFixed(1) + " m";
+            dispRc.innerText = Rc + " m";
+            dispLevel.innerText = levelName;
+            
+            statusBox.style.color = color;
+            dispDist.style.color = color;
+            dispLevel.style.color = color;
+
+            // 6. 3단계 및 4단계 누적 로그 기록 (상태가 변경되었을 때만 기록)
+            if (level >= 3 && level !== lastLoggedLevel) {
+                addLog(levelName, state, distance.toFixed(1), Rc, cssClass);
+            }
+            
+            // 2단계 이하로 떨어지면 로그 리셋(새로운 위협 포착을 위해)
+            if (level < 3) lastLoggedLevel = 0; 
+            else lastLoggedLevel = level;
+        }
+
+        // 테이블 로그 추가 함수
+        function addLog(levelName, state, dist, rc, cssClass) {
+            const now = new Date();
+            const timeStr = now.getHours().toString().padStart(2,'0') + ":" + 
+                            now.getMinutes().toString().padStart(2,'0') + ":" + 
+                            now.getSeconds().toString().padStart(2,'0') + "." + 
+                            now.getMilliseconds().toString().padStart(3,'0').substring(0,2);
+            
+            const tr = document.createElement('tr');
+            tr.className = cssClass;
+            tr.innerHTML = `
+                <td>${timeStr}</td>
+                <td>${levelName}</td>
+                <td>${state}</td>
+                <td>${dist} m</td>
+                <td>${rc} m</td>
+            `;
+            logBody.prepend(tr); // 최신 로그를 위로
+        }
+
+        // 이벤트 리스너 (수동 조작 시)
+        targetPxIn.addEventListener('input', (e) => {
+            pxValueDisp.innerText = e.target.value;
+            evaluateSystem();
+        });
+        zoomLevelIn.addEventListener('input', (e) => {
+            zoomValueDisp.innerText = e.target.value;
+            evaluateSystem();
+        });
+        flightStateSel.addEventListener('change', evaluateSystem);
+
+        // 시뮬레이션 버튼 (랜덤하게 새가 다가오는 상황 연출)
+        simBtn.addEventListener('click', () => {
+            if (simInterval) {
+                clearInterval(simInterval);
+                simInterval = null;
+                simBtn.innerText = "Start Real-time Simulation";
+                simBtn.style.background = "#45a29e";
+            } else {
+                simBtn.innerText = "Stop Simulation";
+                simBtn.style.background = "var(--level4)";
+                
+                // 표적 크기를 점진적으로 키워서 거리가 가까워지게 만듦
+                let currentPx = 10; 
+                targetPxIn.value = currentPx;
+                
+                simInterval = setInterval(() => {
+                    // 픽셀이 점점 커짐 (새가 다가옴) + 약간의 흔들림(Ping-pong effect 구현)
+                    currentPx += (Math.random() * 4); 
+                    if(currentPx > 300) currentPx = 10; // 충돌 후 초기화
+                    
+                    targetPxIn.value = currentPx.toFixed(1);
+                    pxValueDisp.innerText = currentPx.toFixed(1);
+                    evaluateSystem();
+                }, 100); // 100ms 마다 갱신 (10 FPS 느낌)
+            }
+        });
+
+        // 초기 1회 실행
+        evaluateSystem();
+    </script>
+</body>
+</html>
