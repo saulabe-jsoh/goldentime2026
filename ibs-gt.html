@@ -160,7 +160,7 @@
 
     <script>
         // 모델 설정 상수
-        const MODEL_PATH = './yolo11n.onnx'; 
+        // const MODEL_PATH = './yolo11n.onnx'; 
 
         // 분할된 조각 파일들의 경로 목록 (총 11개 조각 예시)
         const MODEL_PARTS = [
@@ -283,13 +283,42 @@
         // 1. 모델 로드
         async function loadModel() {
             try {
-                appendSysLog("ONNX Runtime WebGL 초기화 중...");
-                session = await ort.InferenceSession.create(MODEL_PATH, { executionProviders: ['webgl', 'wasm'] });
+                // appendSysLog("ONNX Runtime WebGL 초기화 중...");
+                appendSysLog(`분할 모델 다운로드 시작 (총 ${MODEL_PARTS.length}개 조각)...`);
+                // 1. 모든 조각 파일을 병렬로 다운로드
+                const fetchPromises = MODEL_PARTS.map(async (partUrl, idx) => {
+                  const response = await fetch(partUrl);
+                  if (!response.ok) throw new Error(`조각 다운로드 실패: ${partUrl}`);
+                  const buffer = await response.arrayBuffer();
+                  appendSysLog(`조각 [${idx + 1}/${MODEL_PARTS.length}] 수신 완료`);
+                  return buffer;
+                });
+                
+                const buffers = await Promise.all(fetchPromises);
+
+                // 2. 전체 크기 계산 및 메모리 상에서 하나로 병합 (Uint8Array 결합)
+                const totalLength = buffers.reduce((acc, b) => acc + b.byteLength, 0);
+                appendSysLog(`전체 크기: ${(totalLength / (1024 * 1024)).toFixed(2)} MB 병합 중...`);
+
+                const mergedArray = new Uint8Array(totalLength);
+                let offset = 0;
+                for (const buffer of buffers) {
+                  mergedArray.set(new Uint8Array(buffer), offset);
+                  offset += buffer.byteLength;
+                }
+
+                // 3. 병합된 ArrayBuffer로부터 ONNX 세션 직접 생성
+                appendSysLog("ONNX Runtime WebGL 세션 초기화 중...");
+                session = await ort.InferenceSession.create(mergedArray.buffer, { 
+                  executionProviders: ['webgl', 'wasm'] 
+                });
+                // session = await ort.InferenceSession.create(MODEL_PATH, { executionProviders: ['webgl', 'wasm'] });
                 
                 const statusBtn = document.getElementById('model-status');
                 statusBtn.innerHTML = '<i class="fa-solid fa-check mr-1"></i>모델 준비 완료';
                 statusBtn.className = "px-4 py-2 bg-emerald-500/10 text-emerald-400 text-sm font-bold rounded-full border border-emerald-500/20";
-                appendSysLog("YOLOv11 ONNX 모델 로딩 성공");
+                // appendSysLog("YOLOv11 ONNX 모델 로딩 성공");
+                appendSysLog("YOLOv11x ONNX 모델 로딩 성공");
                 
                 if (video.src) btnAnalyze.disabled = false;
             } catch (e) {
