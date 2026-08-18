@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>IBS-PAS (YOLO11x Async Edge Vision)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Pretendard', Courier, monospace; background-color: #0b0c10; color: #c5c6c7; }
+        
+        #video-container { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; overflow: hidden; border-radius: 0.5rem; border: 1px solid #1f2833; box-shadow: 0 4px 6px rgba(0,0,0,0.5); }
+        video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+        /* 캔버스 배경을 투명하게 하여 비디오 위에 덧씌움 */
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; z-index: 10; pointer-events: none; }
+        
+        .log-panel::-webkit-scrollbar { width: 6px; }
+        .log-panel::-webkit-scrollbar-thumb { background: #45a29e; border-radius: 3px; }
+        
+        .gauge-container { position: relative; height: 30px; background: #1f2833; border-radius: 15px; overflow: hidden; border: 2px solid #333; margin-top: 15px; }
+        .gauge-zones { display: flex; height: 100%; width: 100%; position: absolute; }
+        .zone-l1 { width: 25%; background: rgba(76, 175, 80, 0.2); } 
+        .zone-l2 { width: 25%; background: rgba(255, 235, 59, 0.2); } 
+        .zone-l3 { width: 30%; background: rgba(255, 152, 0, 0.3); }  
+        .zone-l4 { width: 20%; background: rgba(244, 67, 54, 0.5); }  
+        
+        .gauge-marker { position: absolute; top: 0; height: 100%; width: 4px; background: #fff; box-shadow: 0 0 12px #fff, 0 0 8px #66fcf1; transition: left 0.1s ease-out; z-index: 10; }
+        .glow-text { text-shadow: 0 0 8px currentColor; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col p-6 items-center">
+
+    <div class="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <div class="lg:col-span-2 space-y-4">
+            <div class="bg-[#1f2833] border border-[#45a29e] p-4 rounded-xl flex justify-between items-center shadow-lg">
+                <div>
+                    <h1 class="font-bold text-xl text-[#66fcf1] glow-text">IBS-PAS (YOLO11x Async Vision)</h1>
+                    <p class="text-xs text-slate-400 mt-1">대용량 분할 모델 로드 및 비동기 추론을 통한 영상 끊김 방지 최적화</p>
+                </div>
+                <div id="model-status" class="px-4 py-2 bg-amber-500/10 text-amber-400 text-sm font-bold rounded-full border border-amber-500/20">
+                    <i class="fa-solid fa-spinner fa-spin mr-2"></i>모델 다운로드 대기
+                </div>
+            </div>
+
+            <div class="bg-[#1f2833] border border-slate-700 p-4 rounded-xl flex flex-wrap gap-4 items-end">
+                <div class="flex-grow">
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">영상 파일 업로드 (.mp4)</label>
+                    <input type="file" id="video-upload" accept="video/mp4" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-slate-700 file:text-[#66fcf1] hover:file:bg-slate-600 bg-[#0b0c10] border border-slate-600 rounded-md">
+                </div>
+                <div>
+                    <label class="block text-xs text-[#66fcf1] font-semibold mb-1">운항 상태 (Flight State)</label>
+                    <select id="flight-state" class="block w-full px-4 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none">
+                        <option value="CRUISE">순항 (Cruise - 127kts)</option>
+                        <option value="TAKEOFF">이·착륙/호버링 (Takeoff - 87kts)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">광학 배율 (Zoom)</label>
+                    <select id="zoom-level" class="block w-full px-4 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none">
+                        <option value="15">15x</option>
+                        <option value="30">30x</option>
+                    </select>
+                </div>
+                <button id="btn-analyze" disabled class="px-6 py-2 bg-[#45a29e] hover:bg-[#66fcf1] hover:text-black text-[#0b0c10] text-sm font-bold rounded-md disabled:opacity-50 transition-colors">분석 시작</button>
+            </div>
+
+            <div id="video-container">
+                <video id="video" playsinline muted></video>
+                <canvas id="canvas"></canvas>
+            </div>
+
+            <div class="grid grid-cols-4 gap-2 bg-[#1f2833] border border-slate-700 p-2 rounded-xl text-center">
+                <div class="bg-[#0b0c10] p-2 rounded border border-slate-800">
+                    <div class="text-[10px] text-slate-400">AI Infer Time</div>
+                    <div id="metric-infer" class="font-mono text-sm font-bold text-indigo-400">0 ms</div>
+                </div>
+                <div class="bg-[#0b0c10] p-2 rounded border border-slate-800">
+                    <div class="text-[10px] text-slate-400">Post-process</div>
+                    <div id="metric-post" class="font-mono text-sm font-bold text-amber-400">0 ms</div>
+                </div>
+                <div class="bg-[#0b0c10] p-2 rounded border border-slate-800">
+                    <div class="text-[10px] text-slate-400">Video Render FPS</div>
+                    <div id="metric-fps" class="font-mono text-sm font-bold text-emerald-400">0</div>
+                </div>
+                <div class="bg-[#0b0c10] p-2 rounded border border-slate-800">
+                    <div class="text-[10px] text-slate-400">탐지 표적</div>
+                    <div id="metric-birds" class="font-mono text-sm font-bold text-rose-400">0 마리</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="space-y-4 flex flex-col h-full max-h-[850px]">
+            <div class="bg-[#0b0c10] border border-slate-700 p-5 rounded-xl shadow-inner">
+                <h3 class="text-sm font-bold text-[#66fcf1] uppercase mb-3"><i class="fa-solid fa-gauge-high mr-2"></i>Threat Monitor HUD</h3>
+                
+                <div class="flex justify-between items-center bg-[#1f2833] p-4 rounded-lg border border-[#45a29e] transition-colors duration-300" id="hud-status-box">
+                    <div class="text-center">
+                        <div class="text-xs text-slate-400 mb-1">최단 거리</div>
+                        <div id="hud-dist" class="text-2xl font-bold font-mono text-slate-200 glow-text">-- m</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-xs text-slate-400 mb-1">임계값 (Rc)</div>
+                        <div id="hud-rc" class="text-2xl font-bold font-mono text-slate-200 glow-text">192 m</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-xs text-slate-400 mb-1">위험 단계</div>
+                        <div id="hud-level" class="text-xl font-bold text-slate-200 glow-text">Standby</div>
+                    </div>
+                </div>
+
+                <div class="gauge-container">
+                    <div class="gauge-zones">
+                        <div class="zone-l1"></div><div class="zone-l2"></div>
+                        <div class="zone-l3"></div><div class="zone-l4"></div>
+                    </div>
+                    <div id="hud-marker" class="gauge-marker" style="left: 0%;"></div>
+                </div>
+            </div>
+
+            <div class="bg-[#1f2833] border border-slate-700 rounded-xl flex flex-col flex-grow overflow-hidden">
+                <div class="p-4 border-b border-slate-800 bg-[#0b0c10] flex justify-between items-center">
+                    <h2 class="text-sm font-bold text-[#66fcf1]"><i class="fa-solid fa-triangle-exclamation mr-2"></i> 위기 경보 로그</h2>
+                    <span id="crisis-count" class="text-xs text-black font-bold bg-[#45a29e] px-2 py-1 rounded">0건</span>
+                </div>
+                <div id="alert-log" class="p-4 overflow-y-auto log-panel flex-grow space-y-2 bg-[#0b0c10]"></div>
+            </div>
+
+            <div class="bg-[#1f2833] border border-slate-700 rounded-xl flex flex-col h-40 overflow-hidden">
+                <div class="p-2 border-b border-slate-800 bg-[#0b0c10] text-[10px] font-bold text-slate-400">System Logs</div>
+                <pre id="sys-log" class="p-2 overflow-y-auto log-panel text-[10px] font-mono text-slate-400 h-full leading-relaxed"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CONFIDENCE_THRESHOLD = 0.25;
+        const IOU_THRESHOLD = 0.45;
+        const TARGET_SIZE = 640;
+        const BIRD_CLASS_INDEX = 14; 
+        
+        // 11개로 분할된 YOLO11x 모델 조각들
+        const MODEL_PARTS = [
+            './yolo11x.onnx.part0', './yolo11x.onnx.part1', './yolo11x.onnx.part2',
+            './yolo11x.onnx.part3', './yolo11x.onnx.part4', './yolo11x.onnx.part5',
+            './yolo11x.onnx.part6', './yolo11x.onnx.part7', './yolo11x.onnx.part8',
+            './yolo11x.onnx.part9', './yolo11x.onnx.part10'
+        ];
+
+        let session;
+        let isAnalyzing = false;
+        let isInferencing = false; // 현재 AI 연산 중인지 체크하는 플래그
+        let lastDetections = [];   // 화면에 그려질 최신 탐지 결과 캐싱
+        
+        let crisisCounter = 0;
+        let lastAlertTime = 0;
+
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const btnAnalyze = document.getElementById('btn-analyze');
+        const zoomSelect = document.getElementById('zoom-level');
+        const flightStateSel = document.getElementById('flight-state');
+        const sysLog = document.getElementById('sys-log');
+        const alertLog = document.getElementById('alert-log');
+
+        const hudStatusBox = document.getElementById('hud-status-box');
+        const hudDist = document.getElementById('hud-dist');
+        const hudRc = document.getElementById('hud-rc');
+        const hudLevel = document.getElementById('hud-level');
+        const hudMarker = document.getElementById('hud-marker');
+
+        const prepCanvas = document.createElement('canvas');
+        prepCanvas.width = TARGET_SIZE;
+        prepCanvas.height = TARGET_SIZE;
+        const prepCtx = prepCanvas.getContext('2d');
+
+        function appendSysLog(msg, type="INFO") {
+            const time = new Date().toISOString().split('T')[1].slice(0, 12);
+            let color = type === "WARN" ? "text-amber-400" : (type === "ERROR" ? "text-red-400" : "text-slate-400");
+            const logLine = `<span>[${time}]</span> <span class="${color}">${msg}</span>\n`;
+            sysLog.innerHTML = logLine + sysLog.innerHTML.substring(0, 1500);
+        }
+
+        // --- 1. YOLO11x 대용량 분할 모델 다운로드 및 병합 로드 ---
+        async function loadSplitModel() {
+            try {
+                appendSysLog(`분할 모델 다운로드 시작 (총 ${MODEL_PARTS.length}개 조각)...`);
+                document.getElementById('model-status').innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>다운로드 중...';
+                
+                const fetchPromises = MODEL_PARTS.map(async (partUrl, idx) => {
+                    const response = await fetch(partUrl);
+                    if (!response.ok) throw new Error(`조각 ${idx} 다운로드 실패`);
+                    return await response.arrayBuffer();
+                });
+
+                const buffers = await Promise.all(fetchPromises);
+                appendSysLog("다운로드 완료. 메모리 병합 시작...");
+
+                const totalLength = buffers.reduce((acc, b) => acc + b.byteLength, 0);
+                const mergedArray = new Uint8Array(totalLength);
+                let offset = 0;
+                for (const buffer of buffers) {
+                    mergedArray.set(new Uint8Array(buffer), offset);
+                    offset += buffer.byteLength;
+                }
+
+                // 가능하면 webgpu 우선 사용, 안되면 webgl로 폴백
+                appendSysLog("ONNX Runtime 세션 초기화 중...");
+                session = await ort.InferenceSession.create(mergedArray.buffer, { 
+                    executionProviders: ['webgpu', 'webgl', 'wasm'] 
+                });
+
+                const statusBtn = document.getElementById('model-status');
+                statusBtn.innerHTML = '<i class="fa-solid fa-check mr-1"></i>YOLO11x 로드 완료';
+                statusBtn.className = "px-4 py-2 bg-emerald-500/10 text-emerald-400 text-sm font-bold rounded-full border border-emerald-500/20";
+                appendSysLog(`YOLO11x 병합 및 로드 완료! (크기: ${(totalLength/1024/1024).toFixed(1)}MB)`);
+                
+                if (video.src) btnAnalyze.disabled = false;
+            } catch (e) {
+                appendSysLog(`로드 실패: ${e.message}`, "ERROR");
+                document.getElementById('model-status').textContent = "로드 실패";
+            }
+        }
+        
+        loadSplitModel(); // 페이지 접속 시 바로 로드 시작
+
+        // 비디오 제어
+        document.getElementById('video-upload').addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                video.src = URL.createObjectURL(e.target.files[0]);
+                video.load();
+                video.onloadeddata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    if (session) btnAnalyze.disabled = false;
+                };
+            }
+        });
+
+        btnAnalyze.addEventListener('click', () => {
+            if (isAnalyzing) {
+                isAnalyzing = false;
+                video.pause();
+                btnAnalyze.textContent = "분석 시작";
+                btnAnalyze.className = "px-6 py-2 bg-[#45a29e] hover:bg-[#66fcf1] text-[#0b0c10] text-sm font-bold rounded-md";
+            } else {
+                isAnalyzing = true;
+                video.play();
+                btnAnalyze.textContent = "분석 중지";
+                btnAnalyze.className = "px-6 py-2 bg-red-600 text-white text-sm font-bold rounded-md";
+                
+                // 루프 2개 동시 실행 (렌더링 루프 + AI 추론 루프)
+                renderLoop();
+                runAsyncInference();
+            }
+        });
+
+        // --- 2. 비동기 AI 추론 루프 (영상을 멈추지 않고 백그라운드에서 실행) ---
+        async function runAsyncInference() {
+            if (!isAnalyzing || video.paused || video.ended) return;
+
+            isInferencing = true;
+            const t1 = performance.now();
+
+            // 1. 영상 스냅샷 캡처
+            prepCtx.drawImage(video, 0, 0, TARGET_SIZE, TARGET_SIZE);
+            const imgData = prepCtx.getImageData(0, 0, TARGET_SIZE, TARGET_SIZE).data;
+            
+            const inputBuffer = new Float32Array(1 * 3 * TARGET_SIZE * TARGET_SIZE);
+            for (let i = 0; i < TARGET_SIZE * TARGET_SIZE; i++) {
+                inputBuffer[i] = imgData[i * 4] / 255.0;                         
+                inputBuffer[TARGET_SIZE * TARGET_SIZE + i] = imgData[i * 4 + 1] / 255.0;     
+                inputBuffer[TARGET_SIZE * TARGET_SIZE * 2 + i] = imgData[i * 4 + 2] / 255.0; 
+            }
+            const tensor = new ort.Tensor('float32', inputBuffer, [1, 3, TARGET_SIZE, TARGET_SIZE]);
+            
+            // 2. 모델 추론
+            const output = await session.run({ [session.inputNames[0]]: tensor });
+            const t2 = performance.now();
+
+            // 3. 후처리 및 NMS
+            const outputData = output[session.outputNames[0]].data;
+            const boxes = [];
+            const numAnchors = 8400;
+            const classRowOffset = 4 + BIRD_CLASS_INDEX; 
+
+            for (let i = 0; i < numAnchors; i++) {
+                const score = outputData[classRowOffset * numAnchors + i];
+                if (score > CONFIDENCE_THRESHOLD) {
+                    const cx = outputData[0 * numAnchors + i];
+                    const cy = outputData[1 * numAnchors + i];
+                    const w = outputData[2 * numAnchors + i];
+                    const h = outputData[3 * numAnchors + i];
+                    boxes.push({ x1: cx - w/2, y1: cy - h/2, x2: cx + w/2, y2: cy + h/2, w, h, score });
+                }
+            }
+
+            // 가장 최근 탐지 결과를 글로벌 변수에 캐싱하여 렌더링 루프가 가져다 쓰게 함
+            lastDetections = applyNMS(boxes, IOU_THRESHOLD);
+            const t3 = performance.now();
+
+            document.getElementById('metric-infer').innerText = `${(t2-t1).toFixed(1)} ms`;
+            document.getElementById('metric-post').innerText = `${(t3-t2).toFixed(1)} ms`;
+            document.getElementById('metric-birds').innerText = `${lastDetections.length} 마리`;
+
+            isInferencing = false;
+            
+            // AI가 다 끝나면 바로 다음 스냅샷 분석 시작 (브라우저 숨통을 트여주기 위해 setTimeout)
+            setTimeout(runAsyncInference, 0); 
+        }
+
+        let lastRenderTime = performance.now();
+
+        // --- 3. 렌더링 전용 루프 (비디오 프레임에 맞춰 60FPS로 부드럽게 화면만 그림) ---
+        function renderLoop() {
+            if (!isAnalyzing || video.paused || video.ended) return;
+
+            const now = performance.now();
+            const renderFps = 1000 / (now - lastRenderTime);
+            lastRenderTime = now;
+            document.getElementById('metric-fps').innerText = renderFps.toFixed(0);
+
+            // 캔버스 초기화 후, 캐싱된(lastDetections) 바운딩 박스를 덧그리기
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (lastDetections.length > 0) {
+                const scaleX = canvas.width / TARGET_SIZE;
+                const scaleY = canvas.height / TARGET_SIZE;
+                const currentZoom = parseInt(zoomSelect.value); 
+                let currentMinDist = 1000;
+
+                lastDetections.forEach(det => {
+                    const rx = det.x1 * scaleX, ry = det.y1 * scaleY;
+                    const rw = det.w * scaleX, rh = det.h * scaleY;
+                    
+                    const targetPixelSize = Math.max(rw, rh);
+                    const distanceMeters = 500 * (100 / targetPixelSize) * (currentZoom / 15);
+                    if (distanceMeters < currentMinDist) currentMinDist = distanceMeters;
+
+                    const riskColor = distanceMeters < 500 ? "#f44336" : "#66fcf1";
+                    ctx.strokeStyle = riskColor;
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(rx, ry, rw, rh);
+
+                    const label = `Bird (${Math.round(det.score*100)}%) | ${distanceMeters.toFixed(1)}m`;
+                    ctx.fillStyle = riskColor;
+                    ctx.fillRect(rx, ry - 25, ctx.measureText(label).width + 10, 25);
+                    ctx.fillStyle = "#000";
+                    ctx.font = "bold 14px Pretendard";
+                    ctx.fillText(label, rx + 5, ry - 7);
+                });
+
+                updateHUD(currentMinDist);
+            } else {
+                updateHUD(1000);
+            }
+
+            // 브라우저의 기본 디스플레이 주사율에 맞춰 부드럽게 호출
+            requestAnimationFrame(renderLoop);
+        }
+
+        // --- 위험 레벨 평가 및 HUD 로직 ---
+        function evaluateRisk(distance, state) {
+            const Rc = (state === 'CRUISE') ? 192 : 220; 
+            let level = 1, levelName = "L1(Normal)", color = "#4caf50", bgClass = "border-[#4caf50]";
+            
+            if (distance <= Rc) {
+                level = 4; levelName = "L4(Critical)"; color = "#f44336"; bgClass = "border-[#f44336] bg-red-900/30";
+            } else if (distance <= 500) {
+                level = 3; levelName = "L3(Warning)"; color = "#ff9800"; bgClass = "border-[#ff9800] bg-orange-900/20";
+            } else if (distance <= 750) {
+                level = 2; levelName = "L2(Caution)"; color = "#ffeb3b"; bgClass = "border-[#ffeb3b]";
+            }
+            return { Rc, level, levelName, color, bgClass };
+        }
+
+        function updateHUD(minDist) {
+            const state = flightStateSel.value;
+            let safeDistance = Math.min(minDist, 1000);
+            const { Rc, level, levelName, color, bgClass } = evaluateRisk(safeDistance, state);
+
+            let gaugePercent = ((1000 - safeDistance) / 1000) * 100;
+            hudMarker.style.left = `${gaugePercent}%`;
+            
+            hudDist.innerText = safeDistance >= 1000 ? ">1000m" : safeDistance.toFixed(1) + "m";
+            hudRc.innerText = Rc + "m";
+            hudLevel.innerText = levelName;
+
+            hudDist.style.color = color;
+            hudLevel.style.color = color;
+            hudStatusBox.className = `flex justify-between items-center p-4 rounded-lg border-2 transition-colors duration-300 ${bgClass}`;
+
+            const currentTimeSec = video.currentTime;
+            if (level >= 3 && (currentTimeSec - lastAlertTime > 1.0)) {
+                addAlertLog(levelName, safeDistance.toFixed(1), Rc, color);
+                lastAlertTime = currentTimeSec;
+            }
+        }
+
+        function addAlertLog(levelName, dist, rc, color) {
+            if (crisisCounter === 0) alertLog.innerHTML = ""; 
+            crisisCounter++;
+            document.getElementById('crisis-count').innerText = `${crisisCounter}건`;
+            document.getElementById('crisis-count').className = "text-xs text-white font-bold bg-red-600 px-2 py-1 rounded animate-pulse";
+
+            const timeStr = video.currentTime.toFixed(1);
+            const html = `
+                <div class="border border-slate-700 p-2 rounded flex justify-between items-center bg-slate-900/50" style="border-left: 4px solid ${color}">
+                    <div><div class="text-[10px] text-slate-400">Video: ${timeStr}s</div><div class="font-bold text-xs" style="color: ${color}">${levelName}</div></div>
+                    <div class="text-right"><div class="font-bold text-sm text-slate-200">${dist}m</div><div class="text-[9px] text-slate-500">Rc: ${rc}m</div></div>
+                </div>`;
+            alertLog.innerHTML = html + alertLog.innerHTML;
+        }
+
+        function applyNMS(boxes, iouThreshold) {
+            boxes.sort((a, b) => b.score - a.score);
+            const result = [];
+            while (boxes.length > 0) {
+                const bestBox = boxes.shift();
+                result.push(bestBox);
+                for (let i = boxes.length - 1; i >= 0; i--) {
+                    const box = boxes[i];
+                    const intersectW = Math.max(0, Math.min(bestBox.x2, box.x2) - Math.max(bestBox.x1, box.x1));
+                    const intersectH = Math.max(0, Math.min(bestBox.y2, box.y2) - Math.max(bestBox.y1, box.y1));
+                    const iou = (intersectW * intersectH) / ((bestBox.w * bestBox.h) + (box.w * box.h) - (intersectW * intersectH));
+                    if (iou > iouThreshold) boxes.splice(i, 1);
+                }
+            }
+            return result;
+        }
+    </script>
+</body>
+</html>
