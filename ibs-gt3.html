@@ -120,24 +120,31 @@
         <!-- 우측 HUD 패널 -->
         <div class="space-y-4 flex flex-col h-full max-h-[850px]">
             
-            <div class="bg-[#0b0c10] border border-slate-700 p-5 rounded-xl shadow-inner">
-                <h3 class="text-sm font-bold text-[#66fcf1] uppercase mb-3"><i class="fa-solid fa-gauge-high mr-2"></i>Threat Monitor HUD</h3>
-                <div class="flex justify-between items-center bg-[#1f2833] p-4 rounded-lg border border-[#45a29e] transition-colors duration-300" id="hud-status-box">
-                    <div class="text-center">
-                        <div class="text-xs text-slate-400 mb-1">최단 거리</div>
-                        <div id="hud-dist" class="text-2xl font-bold font-mono text-slate-200 glow-text">-- m</div>
-                    </div>
-                    <div class="text-center">
-                        <div class="text-xs text-slate-400 mb-1">위험 단계 (Decay)</div>
-                        <div id="hud-level" class="text-xl font-bold text-slate-200 glow-text">Standby</div>
-                    </div>
+            <!-- 기체 글로벌 위험도 계기판 -->
+            <div class="bg-[#0b0c10] border border-slate-700 p-5 rounded-xl shadow-inner transition-colors duration-500" id="global-status-box">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-sm font-bold text-[#66fcf1] uppercase"><i class="fa-solid fa-helicopter mr-2"></i>Global Aircraft Status</h3>
+                    <span id="decay-timer" class="text-[10px] text-slate-500 font-mono">Decay: Standby</span>
                 </div>
+                
+                <div class="text-center bg-[#1f2833] py-4 rounded-lg border border-slate-600" id="global-level-box">
+                    <div class="text-xs text-slate-400 mb-1">현재 위험 등급 (10초 감쇠 적용)</div>
+                    <div id="global-level-text" class="text-3xl font-bold text-slate-200 glow-text">Level 1 (Safe)</div>
+                </div>
+
                 <div class="gauge-container">
-                    <div class="gauge-zones">
-                        <div class="zone-l1"></div><div class="zone-l2"></div><div class="zone-l3"></div><div class="zone-l4"></div>
-                    </div>
-                    <div id="hud-marker" class="gauge-marker" style="left: 0%;"></div>
+                    <div class="gauge-zones"><div class="zone-l1"></div><div class="zone-l2"></div><div class="zone-l3"></div><div class="zone-l4"></div></div>
+                    <div id="global-marker" class="gauge-marker" style="left: 0%;"></div>
                 </div>
+                
+                <!-- 👇 새롭게 추가된 각 위험도 단계 표시 (게이지 비율과 동일하게 매핑) 👇 -->
+                <div class="flex w-full mt-2 text-[11px] text-center font-bold tracking-tight">
+                    <div style="width: 25%; color: #4caf50;">L1 (안정)</div>
+                    <div style="width: 25%; color: #ffeb3b;">L2 (주의)</div>
+                    <div style="width: 30%; color: #ff9800;">L3 (경고)</div>
+                    <div style="width: 20%; color: #f44336;">L4 (치명)</div>
+                </div>
+                <!-- 👆 -------------------------------------------------------- 👆 -->
             </div>
 
             <!-- 레이더 (누락되었던 부분 복구) -->
