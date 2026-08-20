@@ -290,7 +290,7 @@
                   const response = await fetch(partUrl);
                   if (!response.ok) throw new Error(`조각 다운로드 실패: ${partUrl}`);
                   const buffer = await response.arrayBuffer();
-                  appendSysLog(`조각 [${idx + 1}/${MODEL_PARTS.length}] 수신 완료`);
+                  appendSysLog(`조각 [${idx + 1}/${MODEL_PATH.length}] 수신 완료`);
                   return buffer;
                 });
                 
