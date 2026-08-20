@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IBS-PAS v3 (YOLO11 High-Speed Edge Engine)</title>
+    <title>IBS-PAS v3 (YOLO11 High-Speed & Bearing Toggle)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
@@ -39,36 +39,57 @@
         <div class="lg:col-span-2 space-y-4">
             <div class="bg-[#1f2833] border border-[#45a29e] p-4 rounded-xl shadow-lg flex justify-between items-center">
                 <div>
-                    <h1 class="font-bold text-xl text-[#66fcf1] glow-text">IBS-PAS v5 (YOLO11x Speedup Engine)</h1>
-                    <p class="text-xs text-slate-400 mt-1">프레임 스킵 및 비동기 파이프라인 적용으로 영상 지연 완화</p>
+                    <h1 class="font-bold text-xl text-[#66fcf1] glow-text">IBS-PAS v5 (YOLO11 Dynamic Anchors)</h1>
+                    <p class="text-xs text-slate-400 mt-1">동적 앵커 계산 및 방위각(Bearing) 토글 기능 적용</p>
                 </div>
                 <div id="model-status" class="px-4 py-2 bg-amber-500/10 text-amber-400 text-sm font-bold rounded-full border border-amber-500/20">
-                    <i class="fa-solid fa-spinner fa-spin mr-2"></i>엔진 다운로드 대기
+                    <i class="fa-solid fa-spinner fa-spin mr-2"></i>엔진 로딩 중...
                 </div>
             </div>
 
             <!-- 대시보드 컨트롤러 -->
-            <div class="bg-[#1f2833] border border-slate-700 p-4 rounded-xl flex flex-wrap gap-4 items-end">
-                <div class="flex-grow">
+            <div class="bg-[#1f2833] border border-slate-700 p-4 rounded-xl grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                <div class="col-span-2 md:col-span-4">
                     <label class="block text-xs text-slate-400 font-semibold mb-1">항공 영상 업로드 (.mp4)</label>
                     <input type="file" id="video-upload" accept="video/mp4" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-slate-700 file:text-[#66fcf1] hover:file:bg-slate-600 bg-[#0b0c10] border border-slate-600 rounded-md">
                 </div>
+                
+                <div>
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">탐지 대상 (Class)</label>
+                    <select id="class-filter" class="block w-full px-3 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none">
+                        <option value="bird">Bird Only (조류)</option>
+                        <option value="all">All Objects (전체)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 font-semibold mb-1">신뢰도 (Conf)</label>
+                    <select id="conf-threshold" class="block w-full px-3 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none">
+                        <option value="0.10">10% (민감)</option>
+                        <option value="0.15">15%</option>
+                        <option value="0.25" selected>25% (권장)</option>
+                        <option value="0.35">35% (엄격)</option>
+                    </select>
+                </div>
                 <div>
                     <label class="block text-xs text-[#66fcf1] font-semibold mb-1">운항 상태</label>
-                    <select id="flight-state" class="block w-full px-4 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none">
+                    <select id="flight-state" class="block w-full px-3 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none">
                         <option value="CRUISE">순항 (127kts)</option>
-                        <option value="TAKEOFF">이착륙/호버링 (87kts)</option>
+                        <option value="TAKEOFF">이착륙/호버링</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-xs text-slate-400 font-semibold mb-1">광학 배율 (Zoom)</label>
-                    <select id="zoom-level" class="block w-full px-4 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none">
-                        <option value="1">1x</option><option value="2">2x</option><option value="3">3x</option>
-                        <option value="5">5x</option><option value="10">10x</option>
-                        <option value="15" selected>15x</option><option value="30">30x</option>
+                    <select id="zoom-level" class="block w-full px-3 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none">
+                        <option value="1">1x</option><option value="5">5x</option><option value="15" selected>15x</option><option value="30">30x</option>
                     </select>
                 </div>
-                <button id="btn-analyze" disabled class="px-6 py-2 bg-[#45a29e] hover:bg-[#66fcf1] text-[#0b0c10] text-sm font-bold rounded-md disabled:opacity-50">분석 시작</button>
+
+                <!-- 부가 옵션 및 실행 버튼 -->
+                <div class="col-span-2 md:col-span-3 flex items-center bg-[#0b0c10] px-3 py-2 rounded-md border border-slate-600">
+                    <input type="checkbox" id="toggle-bearing" class="w-4 h-4 text-[#66fcf1] bg-slate-700 border-slate-600 rounded focus:ring-[#66fcf1] focus:ring-2" checked>
+                    <label for="toggle-bearing" class="ml-2 text-sm font-medium text-slate-300">Bearing Target (방위각 및 레이더) 활성화</label>
+                </div>
+                <button id="btn-analyze" disabled class="col-span-2 md:col-span-1 px-4 py-2 bg-[#45a29e] hover:bg-[#66fcf1] text-[#0b0c10] text-sm font-bold rounded-md disabled:opacity-50">분석 시작</button>
             </div>
 
             <!-- 영상 및 바운딩 박스 레이어 -->
@@ -84,12 +105,12 @@
                     <div id="metric-infer" class="font-mono text-sm font-bold text-indigo-400">0 ms</div>
                 </div>
                 <div class="bg-[#0b0c10] p-2 rounded border border-slate-800">
-                    <div class="text-[10px] text-slate-400">Processing Rate</div>
-                    <div id="metric-fps" class="font-mono text-sm font-bold text-emerald-400">0 FPS</div>
+                    <div class="text-[10px] text-slate-400">Dynamic Anchors</div>
+                    <div id="metric-anchors" class="font-mono text-sm font-bold text-emerald-400">0</div>
                 </div>
                 <div class="bg-[#0b0c10] p-2 rounded border border-slate-800">
                     <div class="text-[10px] text-slate-400">탐지 표적</div>
-                    <div id="metric-birds" class="font-mono text-sm font-bold text-rose-400">0 마리</div>
+                    <div id="metric-birds" class="font-mono text-sm font-bold text-rose-400">0 개</div>
                 </div>
                 <div class="bg-[#0b0c10] p-2 rounded border border-slate-800">
                     <div class="text-[10px] text-slate-400">동기화 상태</div>
@@ -119,7 +140,13 @@
             </div>
 
             <!-- 130도 FOV 레이더 디스플레이 -->
-            <div class="bg-[#1f2833] border border-slate-700 p-4 rounded-xl flex flex-col">
+            <div class="bg-[#1f2833] border border-slate-700 p-4 rounded-xl flex flex-col relative">
+                <!-- 비활성화 시 블라인드 레이어 -->
+                <div id="radar-disabled-overlay" class="hidden absolute inset-0 z-30 bg-[#0b0c10]/80 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center text-slate-400">
+                    <i class="fa-solid fa-power-off text-2xl mb-2"></i>
+                    <span class="text-xs font-bold">Bearing Target 옵션 꺼짐</span>
+                </div>
+                
                 <h3 class="text-xs font-bold text-slate-400 mb-2"><i class="fa-solid fa-radar mr-2"></i>130° Forward Collision Radar</h3>
                 <div id="radar-container">
                     <div class="radar-scan"></div>
@@ -142,34 +169,32 @@
 
     <script>
         const CAMERA_FOV_DEG = 130; 
-        const CONFIDENCE_THRESHOLD = 0.25;
         const IOU_THRESHOLD = 0.45;
-        const MODEL_INPUT_SIZE = 320; // 320x320으로 리사이징하여 속도 4배 향상
+        const MODEL_INPUT_SIZE = 320; 
         const BIRD_CLASS_INDEX = 14; 
+        const COCO_CLASSES = 80;
 
-        // 11개 분할 모델 파일 경로
-        //const YOLO11X_DIR = 'yolo11x'
+        // 테스트용 단일 모델 경로 (yolo11x 분할 사용 시 배열로 복구)
         const MODEL_PARTS = [
-            './yolo11n.onnx',
-            //'./yolo11x/yolo11x.onnx.part0',
-            //'./yolo11x/yolo11x.onnx.part1',
-            //'./yolo11x/yolo11x.onnx.part2', 
-            //'./yolo11x/yolo11x.onnx.part3',
-            //'./yolo11x/yolo11x.onnx.part4',
-            //'./yolo11x/yolo11x.onnx.part5', 
-            //'./yolo11x/yolo11x.onnx.part6',
-            //'./yolo11x/yolo11x.onnx.part7',
-            //'./yolo11x/yolo11x.onnx.part8', 
-            //'./yolo11x/yolo11x.onnx.part9',
-            //'./yolo11x/yolo11x.onnx.part10'
+            // './yolo11n.onnx' ,
+            './yolo11x/yolo11x.onnx.part0',
+            './yolo11x/yolo11x.onnx.part1',
+            './yolo11x/yolo11x.onnx.part2',
+            './yolo11x/yolo11x.onnx.part3',
+            './yolo11x/yolo11x.onnx.part4',
+            './yolo11x/yolo11x.onnx.part5',
+            './yolo11x/yolo11x.onnx.part6',
+            './yolo11x/yolo11x.onnx.part7',
+            './yolo11x/yolo11x.onnx.part8',
+            './yolo11x/yolo11x.onnx.part9',
+            './yolo11x/yolo11x.onnx.part10',
         ];
 
         let session;
         let isAnalyzing = false;
-        let isProcessingFrame = false; // 연산 병목 방지용 락(Lock)
+        let isProcessingFrame = false; 
         let lastDetections = [];
         
-        // 10초 위험 감쇠(Decay)용 변수
         let globalRiskLevel = 1;
         let riskExpireTime = 0;
         const DECAY_STEP_MS = 3300; 
@@ -192,12 +217,11 @@
         prepCanvas.height = MODEL_INPUT_SIZE;
         const prepCtx = prepCanvas.getContext('2d');
 
-        // 모델 분할 다운로드 및 병합 초기화
         async function initEngine() {
             try {
                 const fetchPromises = MODEL_PARTS.map(async (part) => {
                     const res = await fetch(part);
-                    if (!res.ok) throw new Error("분할 모델 다운로드 실패");
+                    if (!res.ok) throw new Error("모델 다운로드 실패");
                     return await res.arrayBuffer();
                 });
                 const buffers = await Promise.all(fetchPromises);
@@ -210,7 +234,6 @@
                     offset += b.byteLength; 
                 }
 
-                // WebGL/WASM 환경에서 병렬 가속 설정
                 ort.env.wasm.numThreads = 4;
                 session = await ort.InferenceSession.create(mergedArray.buffer, { 
                     executionProviders: ['webgl', 'wasm'] 
@@ -221,6 +244,7 @@
                 if (video.src) btnAnalyze.disabled = false;
             } catch (e) {
                 console.error("엔진 초기화 실패:", e);
+                document.getElementById('model-status').innerHTML = '로드 실패';
             }
         }
         initEngine();
@@ -239,6 +263,13 @@
             }
         });
 
+        // 방위각 옵션 UI 토글
+        document.getElementById('toggle-bearing').addEventListener('change', (e) => {
+            const overlay = document.getElementById('radar-disabled-overlay');
+            if (e.target.checked) overlay.classList.add('hidden');
+            else overlay.classList.remove('hidden');
+        });
+
         btnAnalyze.addEventListener('click', () => {
             if (isAnalyzing) {
                 isAnalyzing = false; 
@@ -252,14 +283,12 @@
             }
         });
 
-        // 초고속 비동기 추론 파이프라인 (지연 현상 완화 핵심)
         async function processFrameAsync() {
             if (isProcessingFrame || !isAnalyzing || video.paused) return;
-            isProcessingFrame = true; // 락 설정
+            isProcessingFrame = true; 
 
             const startTime = performance.now();
 
-            // 비디오의 현재 프레임을 320x320으로 급속 리사이징
             prepCtx.drawImage(video, 0, 0, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE);
             const imgData = prepCtx.getImageData(0, 0, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE).data;
             
@@ -274,16 +303,40 @@
             const output = await session.run({ [session.inputNames[0]]: tensor });
             const outputData = output[session.outputNames[0]].data;
             
-            const boxes = [];
-            const numAnchors = 2100; // 320x320 입력 기준 앵커 수
-            const classOffset = 4 + BIRD_CLASS_INDEX; 
+            // [버그 수정 1] 동적 앵커 수 자동 계산 (640해상도면 8400, 320이면 2100 등)
+            // YOLO 출력 형태: [1, 84, anchors] (4 box info + 80 class scores)
+            const numClassesAndBbox = 4 + COCO_CLASSES; // 84
+            const numAnchors = outputData.length / numClassesAndBbox;
+            
+            document.getElementById('metric-anchors').innerText = numAnchors;
 
+            // [추가 기능] UI 설정값 읽기
+            const confThreshold = parseFloat(document.getElementById('conf-threshold').value);
+            const classFilter = document.getElementById('class-filter').value;
+            
+            const boxes = [];
+            
             for (let i = 0; i < numAnchors; i++) {
-                const score = outputData[classOffset * numAnchors + i];
-                if (score > CONFIDENCE_THRESHOLD) {
-                    const cx = outputData[0*numAnchors+i], cy = outputData[1*numAnchors+i];
-                    const w = outputData[2*numAnchors+i], h = outputData[3*numAnchors+i];
-                    boxes.push({ cx, cy, w, h, score });
+                if (classFilter === 'bird') {
+                    // 새(Bird) 클래스만 검사
+                    const score = outputData[(4 + BIRD_CLASS_INDEX) * numAnchors + i];
+                    if (score > confThreshold) {
+                        const cx = outputData[0*numAnchors+i], cy = outputData[1*numAnchors+i];
+                        const w = outputData[2*numAnchors+i], h = outputData[3*numAnchors+i];
+                        boxes.push({ cx, cy, w, h, score, label: 'Bird' });
+                    }
+                } else {
+                    // 모든 객체 검사 (가장 점수가 높은 클래스 찾기)
+                    let maxScore = 0;
+                    for (let c = 0; c < COCO_CLASSES; c++) {
+                        const score = outputData[(4 + c) * numAnchors + i];
+                        if (score > maxScore) { maxScore = score; }
+                    }
+                    if (maxScore > confThreshold) {
+                        const cx = outputData[0*numAnchors+i], cy = outputData[1*numAnchors+i];
+                        const w = outputData[2*numAnchors+i], h = outputData[3*numAnchors+i];
+                        boxes.push({ cx, cy, w, h, score: maxScore, label: 'Object' });
+                    }
                 }
             }
             
@@ -291,17 +344,14 @@
             
             const inferTime = performance.now() - startTime;
             document.getElementById('metric-infer').innerText = `${inferTime.toFixed(0)} ms`;
-            document.getElementById('metric-fps').innerText = `${(1000/inferTime).toFixed(1)} FPS`;
-            document.getElementById('metric-birds').innerText = `${lastDetections.length} 마리`;
+            document.getElementById('metric-birds').innerText = `${lastDetections.length} 개`;
 
-            isProcessingFrame = false; // 락 해제
+            isProcessingFrame = false; 
         }
 
-        // 실시간 렌더링 루프 (비디오 속도에 맞춰 부드럽게 출력)
         function renderPipeline() {
             if (!isAnalyzing || video.paused) return;
 
-            // AI 연산이 비어있을 때만 새로운 프레임 분석 요청 (지연 방지)
             if (!isProcessingFrame) {
                 processFrameAsync();
             }
@@ -312,6 +362,7 @@
             let frameMinDist = 1000;
             const flightState = document.getElementById('flight-state').value;
             const zoom = parseFloat(document.getElementById('zoom-level').value);
+            const useBearing = document.getElementById('toggle-bearing').checked;
             const Rc = (flightState === 'CRUISE') ? 192 : 220;
 
             let radarTargets = [];
@@ -324,17 +375,20 @@
                     const rw = det.w * scaleX, rh = det.h * scaleY;
                     const rx = (det.cx - det.w/2) * scaleX, ry = (det.cy - det.h/2) * scaleY;
                     
-                    // 1. 단안 깊이 추정 거리 역산 (배율 적용)
                     const distMeters = 500 * (100 / Math.max(rw, rh)) * (zoom / 15);
                     if (distMeters < frameMinDist) frameMinDist = distMeters;
 
-                    // 2. 방위각 (Bearing) 계산
-                    const centerPx = rx + rw/2;
-                    const bearingDeg = ((centerPx / canvas.width) - 0.5) * CAMERA_FOV_DEG;
-                    
-                    radarTargets.push({ dist: distMeters, bearing: bearingDeg });
+                    // [버그 수정 2] 옵션에 따른 Bearing 계산 분기 처리
+                    let bearingDeg = 0;
+                    let labelText = `${det.label} | ${distMeters.toFixed(0)}m`;
 
-                    // 3. 개별 타겟 위험 등급 결정
+                    if (useBearing) {
+                        const centerPx = rx + rw/2;
+                        bearingDeg = ((centerPx / canvas.width) - 0.5) * CAMERA_FOV_DEG;
+                        radarTargets.push({ dist: distMeters, bearing: bearingDeg });
+                        labelText += ` | ${bearingDeg.toFixed(1)}°`;
+                    }
+
                     let tLvl = 1, tCol = "#4caf50";
                     if (distMeters <= Rc) { tLvl = 4; tCol = "#f44336"; }
                     else if (distMeters <= 500) { tLvl = 3; tCol = "#ff9800"; }
@@ -342,44 +396,43 @@
                     
                     if (tLvl > frameMaxLevel) frameMaxLevel = tLvl;
 
-                    // 캔버스 박스 렌더링
                     ctx.strokeStyle = tCol; 
                     ctx.lineWidth = 3;
                     ctx.strokeRect(rx, ry, rw, rh);
                     
-                    const label = `Bird | ${distMeters.toFixed(0)}m | ${bearingDeg.toFixed(1)}°`;
                     ctx.fillStyle = tCol; 
-                    ctx.fillRect(rx, ry - 22, ctx.measureText(label).width + 10, 22);
+                    ctx.fillRect(rx, ry - 22, ctx.measureText(labelText).width + 10, 22);
                     ctx.fillStyle = "#000"; 
                     ctx.font = "bold 12px Pretendard"; 
-                    ctx.fillText(label, rx + 5, ry - 6);
+                    ctx.fillText(labelText, rx + 5, ry - 6);
                 });
             }
 
-            // 10초 위험 감쇠 및 글로벌 상태 모니터링 업데이트
-            updateDecaySystem(frameMaxLevel, frameMinDist, Rc);
+            updateDecaySystem(frameMaxLevel, frameMinDist);
             
-            // 130도 레이더 업데이트
-            drawRadar(radarTargets, Rc);
+            // 옵션이 꺼져있으면 레이더를 그리지 않음
+            if (useBearing) {
+                drawRadar(radarTargets, Rc);
+            } else {
+                radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height);
+            }
 
             requestAnimationFrame(renderPipeline);
         }
 
-        // 10초 점진적 감쇠 (Decay) 제어 함수
-        function updateDecaySystem(frameMaxLevel, frameMinDist, Rc) {
+        function updateDecaySystem(frameMaxLevel, frameMinDist) {
             const now = Date.now();
 
             if (frameMaxLevel >= globalRiskLevel) {
                 globalRiskLevel = frameMaxLevel;
                 if (frameMaxLevel > 1) {
-                    riskExpireTime = now + DECAY_STEP_MS; // 타임스탬프 갱신
+                    riskExpireTime = now + DECAY_STEP_MS; 
                 }
             } else if (now > riskExpireTime && globalRiskLevel > 1) {
-                globalRiskLevel -= 1; // 3.3초마다 1단계씩 부드럽게 감소
+                globalRiskLevel -= 1; 
                 riskExpireTime = now + DECAY_STEP_MS;
             }
 
-            // 계기판 UI 업데이트
             let lvlName = "Level 1 (Safe)", col = "#4caf50", bg = "border-[#4caf50]";
             if (globalRiskLevel === 4) { lvlName="Level 4 (Critical)"; col="#f44336"; bg="border-[#f44336] bg-red-900/30"; }
             else if (globalRiskLevel === 3) { lvlName="Level 3 (Warning)"; col="#ff9800"; bg="border-[#ff9800] bg-orange-900/20"; }
@@ -400,7 +453,6 @@
             }
         }
 
-        // 130도 FOV 레이더 렌더링
         function drawRadar(targets, Rc) {
             const w = radarCanvas.width, h = radarCanvas.height;
             radarCtx.clearRect(0, 0, w, h);
@@ -409,7 +461,6 @@
             const originY = h; 
             const maxR = h * 0.95; 
 
-            // 레이더 격자 그리기
             radarCtx.strokeStyle = "rgba(0, 255, 0, 0.2)"; 
             radarCtx.lineWidth = 1;
             [0.25, 0.5, 0.75, 1.0].forEach(scale => {
@@ -418,14 +469,12 @@
                 radarCtx.stroke();
             });
 
-            // Rc 긴급 회피 구역 (레드존)
             const rcScale = Rc / 1000;
             radarCtx.fillStyle = "rgba(244, 67, 54, 0.25)";
             radarCtx.beginPath(); 
             radarCtx.arc(originX, originY, maxR * rcScale, Math.PI, 0); 
             radarCtx.fill();
 
-            // 타겟 플로팅
             targets.forEach(t => {
                 if (t.dist > 1000) return;
                 const rPx = (t.dist / 1000) * maxR;
@@ -438,15 +487,13 @@
                 radarCtx.arc(px, py, 4, 0, Math.PI*2); 
                 radarCtx.fill();
 
-                // 로그 기록
-                if (Math.random() < 0.03 && t.dist <= 500) {
+                if (Math.random() < 0.05 && t.dist <= 500) {
                     const html = `<div class="text-[10px] border-b border-slate-700 py-1"><span style="color:${radarCtx.fillStyle}">[Brg: ${t.bearing.toFixed(1)}°]</span> Dist: ${t.dist.toFixed(0)}m</div>`;
                     alertLog.innerHTML = html + alertLog.innerHTML.substring(0, 1000);
                 }
             });
         }
 
-        // NMS (Non-Maximum Suppression)
         function applyNMS(boxes, iouThreshold) {
             boxes.sort((a, b) => b.score - a.score);
             const result = [];
