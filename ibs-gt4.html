@@ -20,7 +20,7 @@
         .radar-scan { position: absolute; bottom: 0; left: 50%; width: 200%; height: 200%; background: conic-gradient(from 270deg at 50% 100%, rgba(0, 255, 0, 0) 0deg, rgba(0, 255, 0, 0) 60deg, rgba(0, 255, 0, 0.4) 130deg, rgba(0, 255, 0, 0) 131deg); transform-origin: 50% 100%; animation: scan 3s infinite linear; z-index: 10; pointer-events: none; transform: translateX(-50%); }
         @keyframes scan { 0% { transform: translateX(-50%) rotate(-65deg); } 50% { transform: translateX(-50%) rotate(65deg); } 100% { transform: translateX(-50%) rotate(-65deg); } }
 
-        /* 데미지 바 및 시계열 그래프 컨테이너 */
+        /* 데미지 바 */
         .gauge-container { position: relative; height: 30px; background: #1f2833; border-radius: 15px; overflow: hidden; border: 2px solid #333; margin-top: 15px; }
         .gauge-zones { display: flex; height: 100%; width: 100%; position: absolute; }
         .zone-l1 { width: 25%; background: rgba(76, 175, 80, 0.2); } 
@@ -29,7 +29,8 @@
         .zone-l4 { width: 20%; background: rgba(244, 67, 54, 0.5); }  
         .gauge-marker { position: absolute; top: 0; height: 100%; width: 4px; background: #fff; box-shadow: 0 0 12px #fff, 0 0 8px #66fcf1; transition: left 0.1s linear; z-index: 10; }
         
-        #graph-container { position: relative; width: 100%; height: 80px; background: #0b0c10; border-radius: 0.5rem; border: 1px solid #1f2833; overflow: hidden; margin-top: 10px; }
+        /* [NEW] 누적 시계열 그래프 */
+        #graph-container { position: relative; width: 100%; height: 100px; background: #0b0c10; border-radius: 0.5rem; border: 1px solid #1f2833; overflow: hidden; margin-top: 10px; }
         #graph-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
 
         .log-panel::-webkit-scrollbar { width: 6px; }
@@ -46,7 +47,7 @@
             <div class="bg-[#1f2833] border border-[#45a29e] p-4 rounded-xl flex justify-between items-center shadow-lg">
                 <div>
                     <h1 class="font-bold text-xl text-[#66fcf1] glow-text">IBS-PAS (Robust Vision & Full HUD)</h1>
-                    <p class="text-xs text-slate-400 mt-1">동적 텐서 파싱, 시계열 위험도 추적, 방위각(Bearing) 레이더 통합</p>
+                    <p class="text-xs text-slate-400 mt-1">모든 객체 동적 탐지, 누적 위험도 시계열 그래프, 방위각 레이더 통합</p>
                 </div>
                 <div id="model-status" class="px-4 py-2 bg-amber-500/10 text-amber-400 text-sm font-bold rounded-full border border-amber-500/20">
                     <i class="fa-solid fa-spinner fa-spin mr-2"></i>엔진 로딩 중...
@@ -118,7 +119,7 @@
         <!-- 우측: HUD 및 모니터링 패널 -->
         <div class="space-y-4 flex flex-col h-full max-h-[850px]">
             
-            <!-- 1. 위험도 계기판 및 시계열 그래프 -->
+            <!-- 1. 위험도 계기판 및 누적 시계열 그래프 -->
             <div class="bg-[#0b0c10] border border-slate-700 p-5 rounded-xl shadow-inner transition-colors duration-500" id="global-status-box">
                 <div class="flex justify-between items-center mb-2">
                     <h3 class="text-sm font-bold text-[#66fcf1] uppercase"><i class="fa-solid fa-helicopter mr-2"></i>Global Aircraft Status</h3>
@@ -140,8 +141,8 @@
                     <div style="width: 30%; color: #ff9800;">L3(경고)</div><div style="width: 20%; color: #f44336;">L4(치명)</div>
                 </div>
 
-                <!-- [NEW] 위험도 시계열 그래프 -->
-                <h3 class="text-xs font-bold text-slate-400 mt-4 mb-1"><i class="fa-solid fa-chart-line mr-2"></i>Risk Time-Series (최근 10초)</h3>
+                <!-- [NEW] 누적 위험도 시계열 그래프 -->
+                <h3 class="text-xs font-bold text-slate-400 mt-5 mb-1"><i class="fa-solid fa-chart-line mr-2"></i>누적 위험도 추이 (Time-Series)</h3>
                 <div id="graph-container">
                     <canvas id="graph-canvas"></canvas>
                 </div>
@@ -162,8 +163,8 @@
                 </div>
             </div>
 
-            <!-- 3. 시스템 및 경보 로그 -->
-            <div class="bg-[#1f2833] border border-slate-700 rounded-xl flex flex-col flex-grow overflow-hidden">
+            <!-- 3. 시스템 로그 -->
+            <div class="bg-[#1f2833] border border-slate-700 rounded-xl flex flex-col flex-grow overflow-hidden h-32">
                 <div class="p-2 border-b border-slate-800 bg-[#0b0c10] flex justify-between items-center">
                     <span class="text-[10px] font-bold text-slate-400">System Logs</span>
                 </div>
@@ -175,28 +176,21 @@
     <script>
         const CAMERA_FOV_DEG = 130; 
         const IOU_THRESHOLD = 0.45;
-        const MODEL_INPUT_SIZE = 640; // 모델 규격에 맞게 640 고정
-        const BIRD_CLASS_INDEX = 14; 
+        const MODEL_INPUT_SIZE = 640; 
 
-        //const MODEL_PARTS = [ './yolo11n.onnx' ]; // 테스트용 단일 파일 경로
-        const MODEL_PARTS = [
-            './yolo11x/yolo11x.onnx.part0', './yolo11x/yolo11x.onnx.part1', './yolo11x/yolo11x.onnx.part2',
-            './yolo11x/yolo11x.onnx.part3', './yolo11x/yolo11x.onnx.part4', './yolo11x/yolo11x.onnx.part5',
-            './yolo11x/yolo11x.onnx.part6', './yolo11x/yolo11x.onnx.part7', './yolo11x/yolo11x.onnx.part8',
-            './yolo11x/yolo11x.onnx.part9', './yolo11x/yolo11x.onnx.part10'
-        ];
+        // 테스트용 단일 파일 경로 (분할 사용 시 배열 확장)
+        const MODEL_PARTS = [ './yolo11n.onnx' ]; 
 
         let session;
         let isAnalyzing = false;
         let isProcessingFrame = false; 
         let lastDetections = [];
         
-        // Decay 시스템 및 시계열 데이터
+        // Decay 시스템 및 시계열 누적 데이터
         let globalRiskLevel = 1;
         let riskExpireTime = 0;
         const DECAY_STEP_MS = 3300; 
-        let riskHistory = []; // { time: ms, level: 1~4 }
-        const MAX_HISTORY_SEC = 10;
+        let riskHistory = []; 
 
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
@@ -256,8 +250,6 @@
                 video.load();
                 video.onloadeddata = () => {
                     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-                    radarCanvas.width = radarCanvas.parentElement.clientWidth; radarCanvas.height = radarCanvas.parentElement.clientHeight;
-                    graphCanvas.width = graphCanvas.parentElement.clientWidth; graphCanvas.height = graphCanvas.parentElement.clientHeight;
                     if (session) btnAnalyze.disabled = false;
                 };
             }
@@ -280,7 +272,7 @@
             }
         });
 
-        // --- 1. [핵심 버그 수정] 동적 텐서 파싱 비동기 추론 ---
+        // --- 1. [핵심 버그 1 해결] 모든 객체 감지 및 동적 텐서 파싱 비동기 추론 ---
         async function processFrameAsync() {
             if (isProcessingFrame || !isAnalyzing || video.paused) return;
             isProcessingFrame = true; 
@@ -301,7 +293,6 @@
                 const tensor = new ort.Tensor('float32', inputBuffer, [1, 3, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE]);
                 const output = await session.run({ [session.inputNames[0]]: tensor });
                 
-                // 텐서 Dims 동적 파악 (버그 해결 지점)
                 const outputTensor = output[session.outputNames[0]];
                 const dims = outputTensor.dims;
                 const outputData = outputTensor.data;
@@ -319,25 +310,32 @@
                 document.getElementById('metric-anchors').innerText = numAnchors;
                 const confThreshold = parseFloat(document.getElementById('conf-threshold').value);
                 const boxes = [];
+                const numClasses = numClassesAndBbox - 4; // 보통 80클래스
                 
                 for (let i = 0; i < numAnchors; i++) {
-                    let score, cx, cy, w, h;
+                    let maxScore = 0;
+                    
+                    // 어떤 클래스든 가장 높은 Score를 가진 객체를 찾음 (하드코딩 제거)
                     if (isTransposed) {
-                        score = outputData[i * numClassesAndBbox + 4 + BIRD_CLASS_INDEX];
-                        if (score > confThreshold) {
-                            cx = outputData[i * numClassesAndBbox + 0]; cy = outputData[i * numClassesAndBbox + 1];
-                            w  = outputData[i * numClassesAndBbox + 2]; h  = outputData[i * numClassesAndBbox + 3];
+                        for(let c = 0; c < numClasses; c++) {
+                            let s = outputData[i * numClassesAndBbox + 4 + c];
+                            if(s > maxScore) maxScore = s;
+                        }
+                        if (maxScore > confThreshold) {
+                            let cx = outputData[i * numClassesAndBbox + 0]; let cy = outputData[i * numClassesAndBbox + 1];
+                            let w  = outputData[i * numClassesAndBbox + 2]; let h  = outputData[i * numClassesAndBbox + 3];
+                            boxes.push({ x1: cx - w/2, y1: cy - h/2, x2: cx + w/2, y2: cy + h/2, w, h, score: maxScore });
                         }
                     } else {
-                        score = outputData[(4 + BIRD_CLASS_INDEX) * numAnchors + i];
-                        if (score > confThreshold) {
-                            cx = outputData[0 * numAnchors + i]; cy = outputData[1 * numAnchors + i];
-                            w  = outputData[2 * numAnchors + i]; h  = outputData[3 * numAnchors + i];
+                        for(let c = 0; c < numClasses; c++) {
+                            let s = outputData[(4 + c) * numAnchors + i];
+                            if(s > maxScore) maxScore = s;
                         }
-                    }
-
-                    if (score > confThreshold) {
-                        boxes.push({ x1: cx - w/2, y1: cy - h/2, x2: cx + w/2, y2: cy + h/2, w, h, score });
+                        if (maxScore > confThreshold) {
+                            let cx = outputData[0 * numAnchors + i]; let cy = outputData[1 * numAnchors + i];
+                            let w  = outputData[2 * numAnchors + i]; let h  = outputData[3 * numAnchors + i];
+                            boxes.push({ x1: cx - w/2, y1: cy - h/2, x2: cx + w/2, y2: cy + h/2, w, h, score: maxScore });
+                        }
                     }
                 }
                 
@@ -348,8 +346,10 @@
 
             } catch (e) {
                 appendSysLog(`추론 에러: ${e.message}`, "ERROR");
+            } finally {
+                // [핵심 버그 2 해결] 에러가 나도 반드시 락을 해제하여 프리징 방지
+                isProcessingFrame = false; 
             }
-            isProcessingFrame = false; 
         }
 
         let lastRenderTime = performance.now();
@@ -387,7 +387,7 @@
                     if (distMeters < frameMinDist) frameMinDist = distMeters;
 
                     let bearingDeg = 0;
-                    let labelText = `Bird | ${distMeters.toFixed(0)}m`;
+                    let labelText = `Target | ${distMeters.toFixed(0)}m`;
 
                     if (useBearing) {
                         const centerPx = rx + rw/2;
@@ -413,7 +413,13 @@
             updateGraph(now, globalRiskLevel);
             
             if (useBearing) drawRadar(radarTargets, Rc);
-            else radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height);
+            else {
+                // 레이더 클리어 시 컨테이너 크기 확인
+                const radarContainer = document.getElementById('radar-container');
+                if(radarCanvas.width !== radarContainer.clientWidth) radarCanvas.width = radarContainer.clientWidth;
+                if(radarCanvas.height !== radarContainer.clientHeight) radarCanvas.height = radarContainer.clientHeight;
+                radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height);
+            }
 
             requestAnimationFrame(renderPipeline);
         }
@@ -448,16 +454,24 @@
             } else { document.getElementById('decay-timer').innerText = `Decay: Standby`; }
         }
 
-        // --- 4. 시계열(Time-Series) 위험도 그래프 렌더링 ---
+        // --- 4. [NEW] 누적 시계열(Time-Series) 위험도 그래프 렌더링 ---
         function updateGraph(now, currentLevel) {
-            // 히스토리 추가 및 10초 지난 데이터 제거
             riskHistory.push({ time: now, level: currentLevel });
-            riskHistory = riskHistory.filter(d => now - d.time <= MAX_HISTORY_SEC * 1000);
+            
+            // 데이터가 무한히 쌓여 느려지는 것을 방지 (약 5000개 제한)
+            if (riskHistory.length > 5000) riskHistory.shift(); 
+
+            // [핵심 버그 3 해결] Canvas 동적 사이즈 매칭 (0x0 증발 방지)
+            const container = document.getElementById('graph-container');
+            if (graphCanvas.width !== container.clientWidth) graphCanvas.width = container.clientWidth;
+            if (graphCanvas.height !== container.clientHeight) graphCanvas.height = container.clientHeight;
 
             const w = graphCanvas.width, h = graphCanvas.height;
+            if (w === 0 || h === 0) return; // 아직 렌더링 안됨
+
             graphCtx.clearRect(0, 0, w, h);
 
-            // 배경 그리드 렌더링
+            // 배경 그리드 렌더링 (L1~L4 칸 구분)
             graphCtx.strokeStyle = "rgba(255,255,255,0.05)";
             graphCtx.lineWidth = 1;
             for(let i=1; i<=3; i++) {
@@ -467,37 +481,42 @@
 
             if(riskHistory.length < 2) return;
 
-            // 시계열 라인 그리기
+            // 시계열 라인 그리기 (과거부터 현재까지 좌->우 누적)
             graphCtx.beginPath();
             graphCtx.lineWidth = 2;
             graphCtx.lineJoin = "round";
 
             riskHistory.forEach((pt, i) => {
-                const x = ((pt.time - (now - MAX_HISTORY_SEC*1000)) / (MAX_HISTORY_SEC*1000)) * w;
-                // Level 1 = 밑바닥(h), Level 4 = 꼭대기(0)
+                const x = (i / (riskHistory.length - 1)) * w;
+                // Level 1 = 바닥, Level 4 = 꼭대기
                 const y = h - ((pt.level - 1) / 3) * (h - 10) - 5; 
                 
                 if (i === 0) graphCtx.moveTo(x, y);
                 else graphCtx.lineTo(x, y);
-
-                // 색상 그라데이션 동기화 (최신 위험도 기준)
-                if(pt.level === 4) graphCtx.strokeStyle = "#f44336";
-                else if(pt.level === 3) graphCtx.strokeStyle = "#ff9800";
-                else if(pt.level === 2) graphCtx.strokeStyle = "#ffeb3b";
-                else graphCtx.strokeStyle = "#4caf50";
             });
+            
+            // 현재 위험도 색상으로 라인 칠하기
+            let col = "#4caf50";
+            if(currentLevel === 4) col = "#f44336"; else if(currentLevel === 3) col = "#ff9800"; else if(currentLevel === 2) col = "#ffeb3b";
+            graphCtx.strokeStyle = col;
             graphCtx.stroke();
             
-            // X축 하단 음영 채우기
+            // 라인 아래 영역 색상 채우기
             graphCtx.lineTo(w, h);
             graphCtx.lineTo(0, h);
-            graphCtx.fillStyle = "rgba(102, 252, 241, 0.1)";
+            graphCtx.fillStyle = col + "20"; // 투명도 20%
             graphCtx.fill();
         }
 
         // --- 5. 130도 Bearing 레이더 렌더링 ---
         function drawRadar(targets, Rc) {
+            const container = document.getElementById('radar-container');
+            if (radarCanvas.width !== container.clientWidth) radarCanvas.width = container.clientWidth;
+            if (radarCanvas.height !== container.clientHeight) radarCanvas.height = container.clientHeight;
+
             const w = radarCanvas.width, h = radarCanvas.height;
+            if (w === 0 || h === 0) return;
+
             radarCtx.clearRect(0, 0, w, h);
             
             const originX = w / 2, originY = h; 
