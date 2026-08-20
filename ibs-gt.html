@@ -284,9 +284,9 @@
         async function loadModel() {
             try {
                 // appendSysLog("ONNX Runtime WebGL 초기화 중...");
-                appendSysLog(`분할 모델 다운로드 시작 (총 ${MODEL_PART.length}개 조각)...`);
+                appendSysLog(`분할 모델 다운로드 시작 (총 ${MODEL_PATH.length}개 조각)...`);
                 // 1. 모든 조각 파일을 병렬로 다운로드
-                const fetchPromises = MODEL_PART.map(async (partUrl, idx) => {
+                const fetchPromises = MODEL_PATH.map(async (partUrl, idx) => {
                   const response = await fetch(partUrl);
                   if (!response.ok) throw new Error(`조각 다운로드 실패: ${partUrl}`);
                   const buffer = await response.arrayBuffer();
