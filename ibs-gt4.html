@@ -179,7 +179,13 @@
         const MODEL_INPUT_SIZE = 640; 
 
         // 테스트용 단일 파일 경로 (분할 사용 시 배열 확장)
-        const MODEL_PARTS = [ './yolo11n.onnx' ]; 
+        // const MODEL_PARTS = [ './yolo11n.onnx' ]; 
+        const MODEL_PARTS = [
+            './yolo11x/yolo11x.onnx.part0', './yolo11x/yolo11x.onnx.part1', './yolo11x/yolo11x.onnx.part2',
+            './yolo11x/yolo11x.onnx.part3', './yolo11x/yolo11x.onnx.part4', './yolo11x/yolo11x.onnx.part5',
+            './yolo11x/yolo11x.onnx.part6', './yolo11x/yolo11x.onnx.part7', './yolo11x/yolo11x.onnx.part8',
+            './yolo11x/yolo11x.onnx.part9', './yolo11x/yolo11x.onnx.part10'
+        ];
 
         let session;
         let isAnalyzing = false;
