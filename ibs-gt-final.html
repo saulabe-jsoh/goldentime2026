@@ -165,7 +165,7 @@
                     <i class="fa-solid fa-rotate-left"></i><span>초기화</span>
                 </button>
 
-                <!-- 토글 옵션 바 (바운딩 박스 기본값: 체크 해제) -->
+                <!-- 토글 옵션 바 -->
                 <div class="col-span-2 md:col-span-6 flex flex-wrap gap-4 items-center justify-between bg-[#0b0c10] px-4 py-2.5 rounded-md border border-slate-600 mt-1">
                     <div class="flex items-center">
                         <input type="checkbox" id="toggle-sequential" class="w-4 h-4 text-[#66fcf1] bg-slate-700 border-slate-600 rounded focus:ring-[#66fcf1]" checked>
@@ -215,7 +215,7 @@
                     <div id="metric-infer" class="font-mono text-sm font-bold text-indigo-400">0 ms</div>
                 </div>
                 <div class="bg-[#0b0c10] p-2 rounded border border-slate-800">
-                    <div class="text-[10px] text-slate-400">Video Render FPS</div>
+                    <div class="text-[10px] text-slate-400">Render FPS</div>
                     <div id="metric-fps" class="font-mono text-sm font-bold text-emerald-400">0</div>
                 </div>
                 <div class="bg-[#0b0c10] p-2 rounded border border-slate-800">
@@ -304,6 +304,8 @@
         let session;
         let isAnalyzing = false;
         let isProcessingFrame = false; 
+        let isTransitioningVideo = false; // 영상 교체 중 렌더링 루프 보호 플래그
+        let animFrameId = null;
         let lastDetections = [];
         
         // Decay 시스템 및 시계열 누적 데이터
@@ -312,7 +314,7 @@
         const DECAY_STEP_MS = 3300; 
         let riskHistory = []; 
 
-        // Level 4 알림 상태 및 3초 지연 숨김 타이머
+        // Level 4 알림 타이머
         let level4HideTimer = null;
         let isLevel4AlertActive = false;
 
@@ -342,7 +344,6 @@
         prepCanvas.height = MODEL_INPUT_SIZE;
         const prepCtx = prepCanvas.getContext('2d', { willReadFrequently: true });
 
-        // 제로 카피 텐서 버퍼 풀
         const preallocatedInputBuffer = new Float32Array(3 * PIXELS_COUNT);
 
         function appendSysLog(msg, type="INFO") {
@@ -382,30 +383,52 @@
         }
         initEngine();
 
+        // 비디오 소스 비동기 동기화 로드 함수
         function loadVideoSource(srcPath, displayName) {
-            video.src = srcPath;
-            video.load();
-            currentVideoTag.innerText = `Video: ${displayName}`;
-            appendSysLog(`영상 로드: ${displayName}`);
+            isTransitioningVideo = true;
+            isProcessingFrame = false; // 이전 프레임 락 강제 해제
 
             return new Promise((resolve) => {
-                video.onloadeddata = () => {
+                video.pause();
+                video.src = srcPath;
+                video.load();
+                currentVideoTag.innerText = `Video: ${displayName}`;
+                appendSysLog(`영상 로드: ${displayName}`);
+
+                const onReady = () => {
                     canvas.width = video.videoWidth || 1280;
                     canvas.height = video.videoHeight || 720;
+                    isTransitioningVideo = false;
+                    video.removeEventListener('loadeddata', onReady);
+                    video.removeEventListener('canplay', onReady);
                     resolve();
                 };
+
+                if (video.readyState >= 2) {
+                    onReady();
+                } else {
+                    video.addEventListener('loadeddata', onReady, { once: true });
+                    video.addEventListener('canplay', onReady, { once: true });
+                }
             });
         }
 
-        sampleVideoSelect.addEventListener('change', () => {
+        sampleVideoSelect.addEventListener('change', async () => {
             if (sampleVideoSelect.value) {
                 const selectedVal = sampleVideoSelect.value;
                 currentPlaylistIndex = SAMPLE_PLAYLIST.indexOf(selectedVal);
                 if (currentPlaylistIndex === -1) currentPlaylistIndex = 0;
                 const displayName = selectedVal.split('/').pop();
-                loadVideoSource(selectedVal, displayName).then(() => {
-                    if (isAnalyzing) video.play();
-                });
+                
+                await loadVideoSource(selectedVal, displayName);
+                if (isAnalyzing) {
+                    try {
+                        await video.play();
+                        ensurePipelineRunning();
+                    } catch(err) {
+                        appendSysLog(`재생 에러: ${err.message}`, "ERROR");
+                    }
+                }
             }
         });
 
@@ -413,35 +436,58 @@
             if (e.target.files[0]) {
                 const file = e.target.files[0];
                 sampleVideoSelect.value = "";
+                isTransitioningVideo = true;
+                isProcessingFrame = false;
+
                 video.src = URL.createObjectURL(file);
                 video.load();
                 currentVideoTag.innerText = `Custom: ${file.name}`;
                 appendSysLog(`사용자 영상 업로드: ${file.name}`);
+                
                 video.onloadeddata = () => {
                     canvas.width = video.videoWidth || 1280;
                     canvas.height = video.videoHeight || 720;
-                    if (isAnalyzing) video.play();
+                    isTransitioningVideo = false;
+                    if (isAnalyzing) {
+                        video.play().then(() => ensurePipelineRunning());
+                    }
                 };
             }
         });
 
-        // 영상 종료 시 순차 자동 재생 이벤트 (test0 -> test8 순차 실행)
-        video.addEventListener('ended', () => {
-            if (toggleSequential.checked) {
+        // [버그 핵심 해결] 영상 종료 시 다음 순차 영상으로 안전 전환 및 YOLO11x 탐지 루프 보장
+        video.addEventListener('ended', async () => {
+            if (toggleSequential.checked && isAnalyzing) {
                 currentPlaylistIndex = (currentPlaylistIndex + 1) % SAMPLE_PLAYLIST.length;
                 const nextSrc = SAMPLE_PLAYLIST[currentPlaylistIndex];
                 sampleVideoSelect.value = nextSrc;
                 const displayName = nextSrc.split('/').pop();
-                appendSysLog(`[자동 순차 재생] 다음 시나리오 전환: ${displayName}`, "WARN");
-                loadVideoSource(nextSrc, displayName).then(() => {
-                    if (isAnalyzing) video.play();
-                });
+                
+                appendSysLog(`[자동 순차 재생] ${displayName} 분석 시작`, "WARN");
+                
+                // 1) 비디오 안전 로드 대기
+                await loadVideoSource(nextSrc, displayName);
+                
+                // 2) 비디오 재생 및 탐지 루프 재개 보장
+                if (isAnalyzing) {
+                    try {
+                        await video.play();
+                        ensurePipelineRunning();
+                    } catch (err) {
+                        appendSysLog(`순차 재생 오류: ${err.message}`, "ERROR");
+                    }
+                }
             } else {
                 appendSysLog("영상 재생 완료.");
+                if (!toggleSequential.checked) {
+                    isAnalyzing = false;
+                    btnAnalyze.innerHTML = '<i class="fa-solid fa-play"></i><span>분석 시작</span>';
+                    btnAnalyze.className = "col-span-1 md:col-span-2 px-3 py-2 bg-[#45a29e] hover:bg-[#66fcf1] text-[#0b0c10] text-xs md:text-sm font-bold rounded-md disabled:opacity-50 transition-colors shadow flex items-center justify-center gap-1.5";
+                    hideAllAlertsImmediately();
+                }
             }
         });
 
-        // 모든 위험 알림 즉시 강제 숨김 함수 (분석 중이 아닐 때 무조건 숨김)
         function hideAllAlertsImmediately() {
             if (level4HideTimer) {
                 clearTimeout(level4HideTimer);
@@ -452,9 +498,17 @@
             videoContainer.classList.remove('border-alert-l3', 'border-alert-l4');
         }
 
-        // 파일 선택 초기화 (Reset) 기능
+        // 파일 선택 초기화 (Reset)
         function resetAll() {
             isAnalyzing = false;
+            isTransitioningVideo = false;
+            isProcessingFrame = false;
+            
+            if (animFrameId) {
+                cancelAnimationFrame(animFrameId);
+                animFrameId = null;
+            }
+
             video.pause();
             video.removeAttribute('src');
             video.load();
@@ -467,12 +521,10 @@
             globalRiskLevel = 1;
             riskHistory = [];
             
-            // 캔버스 초기화
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height);
             graphCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
 
-            // 경고 알림 및 계측치 초기화
             hideAllAlertsImmediately();
             updateDecaySystem(1, 1000);
             currentVideoTag.innerText = "Video: Standby";
@@ -492,16 +544,25 @@
             document.getElementById('radar-disabled-overlay').classList.toggle('hidden', e.target.checked);
         });
 
-        // 분석 시작 버튼 클릭 이벤트 (파일 미선택 시 test0.mp4부터 순차 시작)
+        function ensurePipelineRunning() {
+            if (!animFrameId && isAnalyzing) {
+                renderPipeline();
+            }
+        }
+
+        // 분석 시작/중지 버튼 이벤트
         btnAnalyze.addEventListener('click', async () => {
             if (isAnalyzing) {
                 isAnalyzing = false; 
                 video.pause();
-                hideAllAlertsImmediately(); // 분석 중지 시 경고 무조건 숨김
+                if (animFrameId) {
+                    cancelAnimationFrame(animFrameId);
+                    animFrameId = null;
+                }
+                hideAllAlertsImmediately();
                 btnAnalyze.innerHTML = '<i class="fa-solid fa-play"></i><span>분석 시작</span>';
                 btnAnalyze.className = "col-span-1 md:col-span-2 px-3 py-2 bg-[#45a29e] hover:bg-[#66fcf1] text-[#0b0c10] text-xs md:text-sm font-bold rounded-md transition-colors shadow flex items-center justify-center gap-1.5";
             } else {
-                // 영상 파일이 선택/로드되지 않은 경우 test0.mp4부터 자동 시작
                 if (!video.src || video.src === "" || video.src === window.location.href) {
                     appendSysLog("[안내] 선택된 파일이 없어 test0.mp4부터 순차 분석을 시작합니다.", "WARN");
                     currentPlaylistIndex = 0;
@@ -510,16 +571,24 @@
                 }
 
                 isAnalyzing = true; 
-                video.play();
+                try {
+                    await video.play();
+                } catch(e) {
+                    appendSysLog(`재생 시작 에러: ${e.message}`, "ERROR");
+                }
                 btnAnalyze.innerHTML = '<i class="fa-solid fa-stop"></i><span>분석 중지</span>';
                 btnAnalyze.className = "col-span-1 md:col-span-2 px-3 py-2 bg-red-600 hover:bg-red-500 text-white text-xs md:text-sm font-bold rounded-md transition-colors shadow flex items-center justify-center gap-1.5";
-                renderPipeline();
+                
+                ensurePipelineRunning();
             }
         });
 
         // --- 1. 객체 감지 및 동적 텐서 파싱 비동기 추론 ---
         async function processFrameAsync() {
-            if (isProcessingFrame || !isAnalyzing || video.paused || !video.videoWidth) return;
+            // 비디오가 유효하지 않거나 전환 중이면 추론 패스
+            if (isProcessingFrame || !isAnalyzing || video.paused || isTransitioningVideo || video.readyState < 2 || !video.videoWidth) {
+                return;
+            }
             isProcessingFrame = true; 
 
             const startTime = performance.now();
@@ -548,6 +617,7 @@
 
                 let parsedBoxes = [];
 
+                // GPU End-to-End NMS 모델 감지
                 if ((dims.length === 3 && dims[2] === 6) || (dims.length === 2 && dims[1] === 6)) {
                     metricNmsMode.innerText = "GPU E2E";
                     metricNmsMode.className = "font-mono text-[11px] font-bold text-teal-300 glow-text";
@@ -570,6 +640,7 @@
                     lastDetections = parsedBoxes;
 
                 } else {
+                    // Fallback Raw Anchor Parsing
                     metricNmsMode.innerText = "CPU Fallback";
                     metricNmsMode.className = "font-mono text-[11px] font-bold text-amber-400";
 
@@ -622,7 +693,8 @@
                 document.getElementById('metric-birds').innerText = `${lastDetections.length} 개`;
 
             } catch (e) {
-                appendSysLog(`추론 에러: ${e.message}`, "ERROR");
+                // 추론 도중 발생한 일시적 오류 로그
+                appendSysLog(`추론 경고: ${e.message}`, "WARN");
             } finally {
                 isProcessingFrame = false; 
             }
@@ -632,16 +704,25 @@
 
         // --- 2. 실시간 렌더링 파이프라인 ---
         function renderPipeline() {
-            if (!isAnalyzing || video.paused) {
-                hideAllAlertsImmediately(); // 분석 중이 아니면 무조건 경고 숨김
+            if (!isAnalyzing) {
+                animFrameId = null;
+                hideAllAlertsImmediately();
+                return;
+            }
+
+            // 영상 전환 중일 때는 종료하지 않고 대기 루프 유지
+            if (isTransitioningVideo || video.paused || video.readyState < 2) {
+                animFrameId = requestAnimationFrame(renderPipeline);
                 return;
             }
 
             const now = performance.now();
-            document.getElementById('metric-fps').innerText = Math.round(1000 / (now - lastRenderTime));
+            document.getElementById('metric-fps').innerText = Math.round(1000 / Math.max(now - lastRenderTime, 1));
             lastRenderTime = now;
 
-            if (!isProcessingFrame) processFrameAsync();
+            if (!isProcessingFrame) {
+                processFrameAsync();
+            }
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
@@ -712,7 +793,7 @@
                 radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height);
             }
 
-            requestAnimationFrame(renderPipeline);
+            animFrameId = requestAnimationFrame(renderPipeline);
         }
 
         // --- 3. 위험도 10초 감쇠 시스템 ---
@@ -747,16 +828,14 @@
             }
         }
 
-        // --- 4. [요구사항 반영] 레벨 4 전용 경고 표시 및 3초 지연 숨김 로직 ---
+        // --- 4. 레벨 4 전용 경고 표시 및 3초 지연 숨김 로직 ---
         function updateVisualAlerts(currentLevel) {
-            // 영상이 분석 중이 아니면 무조건 숨김
             if (!isAnalyzing || video.paused) {
                 hideAllAlertsImmediately();
                 return;
             }
 
             if (currentLevel === 4) {
-                // 레벨 4 정보 수신: 즉시 경고 표시 및 기존 타이머 취소
                 if (level4HideTimer) {
                     clearTimeout(level4HideTimer);
                     level4HideTimer = null;
@@ -767,9 +846,7 @@
                 centerCriticalOverlay.style.display = 'flex';
 
             } else {
-                // 레벨 4가 아닌 경우 (Level 1, 2, 3)
                 if (isLevel4AlertActive) {
-                    // 이전에 레벨 4였던 경우 3초 뒤에 표시를 숨김
                     if (!level4HideTimer) {
                         level4HideTimer = setTimeout(() => {
                             isLevel4AlertActive = false;
@@ -777,14 +854,12 @@
                             videoContainer.classList.remove('border-alert-l4');
                             level4HideTimer = null;
 
-                            // 3초 후 현재 레벨이 3이면 주황 테두리 적용
                             if (globalRiskLevel === 3 && isAnalyzing && !video.paused) {
                                 videoContainer.classList.add('border-alert-l3');
                             }
                         }, 3000);
                     }
                 } else {
-                    // 레벨 4가 완전히 비활성화된 상태
                     centerCriticalOverlay.style.display = 'none';
                     videoContainer.classList.remove('border-alert-l4');
                     
@@ -812,7 +887,6 @@
 
             graphCtx.clearRect(0, 0, w, h);
 
-            // 그리드
             graphCtx.strokeStyle = "rgba(255,255,255,0.05)";
             graphCtx.lineWidth = 1;
             for(let i=1; i<=3; i++) {
