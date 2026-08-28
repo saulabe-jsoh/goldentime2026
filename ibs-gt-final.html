@@ -828,7 +828,7 @@
             }
         }
 
-        // --- 4. 레벨 4 전용 경고 표시 및 3초 지연 숨김 로직 ---
+        // --- 4. 레벨 4 전용 경고 표 1초 지연 숨김 로직 ---
         function updateVisualAlerts(currentLevel) {
             if (!isAnalyzing || video.paused) {
                 hideAllAlertsImmediately();
@@ -857,7 +857,7 @@
                             if (globalRiskLevel === 3 && isAnalyzing && !video.paused) {
                                 videoContainer.classList.add('border-alert-l3');
                             }
-                        }, 3000);
+                        }, 1000);
                     }
                 } else {
                     centerCriticalOverlay.style.display = 'none';
