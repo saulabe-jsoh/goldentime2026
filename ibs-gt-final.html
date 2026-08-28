@@ -293,7 +293,19 @@
         const MODEL_INPUT_SIZE = 640; 
         const PIXELS_COUNT = MODEL_INPUT_SIZE * MODEL_INPUT_SIZE;
 
-        const MODEL_PARTS = [ './yolo11n.onnx' ];
+        const MODEL_PARTS = [ 
+            ./yolo11x/yolo11x.part0.onnx',
+            ./yolo11x/yolo11x.part1.onnx',
+            ./yolo11x/yolo11x.part2.onnx',
+            ./yolo11x/yolo11x.part3.onnx',
+            ./yolo11x/yolo11x.part4.onnx',
+            ./yolo11x/yolo11x.part5.onnx',
+            ./yolo11x/yolo11x.part6.onnx',
+            ./yolo11x/yolo11x.part7.onnx',
+            ./yolo11x/yolo11x.part8.onnx',
+            ./yolo11x/yolo11x.part9.onnx',
+            ./yolo11x/yolo11x.part10.onnx',
+        ];
 
         const SAMPLE_PLAYLIST = [
             './test0.mp4', './test1.mp4', './test2.mp4', './test3.mp4',
