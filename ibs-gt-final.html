@@ -46,11 +46,11 @@
             100% { border-color: #f44336; box-shadow: inset 0 0 35px rgba(244, 67, 54, 0.9), 0 0 30px rgba(244, 67, 54, 0.8); }
         }
 
-        /* Level 4 전용 컴팩트 중앙 위험 알림 박스 (기본 숨김) */
+        /* Level 4 전용 컴팩트 중앙 위험 알림 박스 (기본 display: none) */
         #center-critical-overlay {
             position: absolute;
             inset: 0;
-            display: none; /* 기본 상태 완전 숨김 */
+            display: none;
             align-items: center;
             justify-content: center;
             pointer-events: none;
@@ -111,7 +111,7 @@
                         <i class="fa-solid fa-film mr-1"></i>샘플 테스트 영상 (test0 ~ test8)
                     </label>
                     <select id="sample-video-select" class="block w-full px-3 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-xs text-white focus:outline-none focus:border-[#66fcf1]">
-                        <option value="">(선택 안함 - 분석 시작 시 순차 자동 시작)</option>
+                        <option value="">(선택 안함 - 분석 시작 시 test0부터 순차 자동 시작)</option>
                         <option value="./test0.mp4">test0.mp4 (기본 종합 시나리오)</option>
                         <option value="./test1.mp4">test1.mp4 (실험 1: 3~7s 경고/치명 진입)</option>
                         <option value="./test2.mp4">test2.mp4 (실험 2: 급박 상황 1~2s 치명 직결)</option>
@@ -160,8 +160,8 @@
                     <i class="fa-solid fa-play"></i><span>분석 시작</span>
                 </button>
 
-                <!-- 파일 초기화 버튼 (1 col) -->
-                <button id="btn-reset" class="col-span-1 md:col-span-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs md:text-sm font-bold rounded-md transition-colors shadow flex items-center justify-center gap-1.5 border border-slate-600">
+                <!-- 파일 선택 초기화 버튼 (1 col) -->
+                <button id="btn-reset" class="col-span-1 md:col-span-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs md:text-sm font-bold rounded-md transition-colors shadow flex items-center justify-center gap-1.5 border border-slate-600" title="영상 및 설정 초기화">
                     <i class="fa-solid fa-rotate-left"></i><span>초기화</span>
                 </button>
 
@@ -219,8 +219,8 @@
                     <div id="metric-fps" class="font-mono text-sm font-bold text-emerald-400">0</div>
                 </div>
                 <div class="bg-[#0b0c10] p-2 rounded border border-slate-800">
-                    <div class="text-[10px] text-slate-400">동적 Anchors</div>
-                    <div id="metric-anchors" class="font-mono text-sm font-bold text-cyan-400">0</div>
+                    <div class="text-[10px] text-slate-400">NMS 파이프라인</div>
+                    <div id="metric-nms-mode" class="font-mono text-[11px] font-bold text-cyan-300">GPU E2E</div>
                 </div>
                 <div class="bg-[#0b0c10] p-2 rounded border border-slate-800">
                     <div class="text-[10px] text-slate-400">탐지 표적</div>
@@ -291,8 +291,8 @@
         const CAMERA_FOV_DEG = 130; 
         const IOU_THRESHOLD = 0.45;
         const MODEL_INPUT_SIZE = 640; 
+        const PIXELS_COUNT = MODEL_INPUT_SIZE * MODEL_INPUT_SIZE;
 
-        // 테스트용 단일 모델 또는 분할 모델
         const MODEL_PARTS = [ './yolo11n.onnx' ];
 
         const SAMPLE_PLAYLIST = [
@@ -311,6 +311,10 @@
         let riskExpireTime = 0;
         const DECAY_STEP_MS = 3300; 
         let riskHistory = []; 
+
+        // Level 4 알림 상태 및 3초 지연 숨김 타이머
+        let level4HideTimer = null;
+        let isLevel4AlertActive = false;
 
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
@@ -331,11 +335,15 @@
         const videoContainer = document.getElementById('video-container');
         const centerCriticalOverlay = document.getElementById('center-critical-overlay');
         const currentVideoTag = document.getElementById('current-video-tag');
+        const metricNmsMode = document.getElementById('metric-nms-mode');
 
         const prepCanvas = document.createElement('canvas');
         prepCanvas.width = MODEL_INPUT_SIZE; 
         prepCanvas.height = MODEL_INPUT_SIZE;
-        const prepCtx = prepCanvas.getContext('2d');
+        const prepCtx = prepCanvas.getContext('2d', { willReadFrequently: true });
+
+        // 제로 카피 텐서 버퍼 풀
+        const preallocatedInputBuffer = new Float32Array(3 * PIXELS_COUNT);
 
         function appendSysLog(msg, type="INFO") {
             const time = new Date().toISOString().split('T')[1].slice(0, 12);
@@ -346,7 +354,7 @@
 
         async function initEngine() {
             try {
-                appendSysLog("ONNX Runtime 초기화 시작...");
+                appendSysLog("ONNX Runtime Web 엔진 초기화 시작...");
                 const fetchPromises = MODEL_PARTS.map(async (part) => {
                     const res = await fetch(part);
                     if (!res.ok) throw new Error(`모델 파일 찾을 수 없음: ${part}`);
@@ -366,7 +374,6 @@
                 document.getElementById('model-status').innerHTML = '<i class="fa-solid fa-check mr-1"></i>엔진 준비 완료';
                 document.getElementById('model-status').className = "px-4 py-2 bg-emerald-500/10 text-emerald-400 text-sm font-bold rounded-full flex items-center";
                 
-                // 엔진 준비 시 분석 시작 버튼 활성화
                 btnAnalyze.disabled = false;
             } catch (e) {
                 appendSysLog(`엔진 로드 실패: ${e.message}`, "ERROR");
@@ -418,7 +425,7 @@
             }
         });
 
-        // 영상 종료 시 순차 자동 재생 이벤트
+        // 영상 종료 시 순차 자동 재생 이벤트 (test0 -> test8 순차 실행)
         video.addEventListener('ended', () => {
             if (toggleSequential.checked) {
                 currentPlaylistIndex = (currentPlaylistIndex + 1) % SAMPLE_PLAYLIST.length;
@@ -434,7 +441,18 @@
             }
         });
 
-        // 파일 초기화 (Reset) 기능
+        // 모든 위험 알림 즉시 강제 숨김 함수 (분석 중이 아닐 때 무조건 숨김)
+        function hideAllAlertsImmediately() {
+            if (level4HideTimer) {
+                clearTimeout(level4HideTimer);
+                level4HideTimer = null;
+            }
+            isLevel4AlertActive = false;
+            centerCriticalOverlay.style.display = 'none';
+            videoContainer.classList.remove('border-alert-l3', 'border-alert-l4');
+        }
+
+        // 파일 선택 초기화 (Reset) 기능
         function resetAll() {
             isAnalyzing = false;
             video.pause();
@@ -454,8 +472,8 @@
             radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height);
             graphCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
 
-            // UI 및 알림 초기화
-            updateVisualAlerts(1);
+            // 경고 알림 및 계측치 초기화
+            hideAllAlertsImmediately();
             updateDecaySystem(1, 1000);
             currentVideoTag.innerText = "Video: Standby";
             document.getElementById('metric-infer').innerText = '0 ms';
@@ -465,7 +483,7 @@
             btnAnalyze.innerHTML = '<i class="fa-solid fa-play"></i><span>분석 시작</span>';
             btnAnalyze.className = "col-span-1 md:col-span-2 px-3 py-2 bg-[#45a29e] hover:bg-[#66fcf1] text-[#0b0c10] text-xs md:text-sm font-bold rounded-md disabled:opacity-50 transition-colors shadow flex items-center justify-center gap-1.5";
             
-            appendSysLog("전체 상태 및 영상 초기화 완료.", "INFO");
+            appendSysLog("전체 상태 및 파일 선택 초기화 완료.", "INFO");
         }
 
         btnReset.addEventListener('click', resetAll);
@@ -474,17 +492,18 @@
             document.getElementById('radar-disabled-overlay').classList.toggle('hidden', e.target.checked);
         });
 
-        // 분석 시작 버튼 클릭 (파일 없을 시 시나리오 0부터 순차 자동 시작)
+        // 분석 시작 버튼 클릭 이벤트 (파일 미선택 시 test0.mp4부터 순차 시작)
         btnAnalyze.addEventListener('click', async () => {
             if (isAnalyzing) {
                 isAnalyzing = false; 
                 video.pause();
+                hideAllAlertsImmediately(); // 분석 중지 시 경고 무조건 숨김
                 btnAnalyze.innerHTML = '<i class="fa-solid fa-play"></i><span>분석 시작</span>';
                 btnAnalyze.className = "col-span-1 md:col-span-2 px-3 py-2 bg-[#45a29e] hover:bg-[#66fcf1] text-[#0b0c10] text-xs md:text-sm font-bold rounded-md transition-colors shadow flex items-center justify-center gap-1.5";
             } else {
-                // 영상 파일이 로드되어 있지 않거나 비어있는 경우 시나리오 0(test0.mp4) 자동 로드
+                // 영상 파일이 선택/로드되지 않은 경우 test0.mp4부터 자동 시작
                 if (!video.src || video.src === "" || video.src === window.location.href) {
-                    appendSysLog("[안내] 선택된 영상이 없어 test0.mp4 시나리오부터 순차 분석을 시작합니다.", "WARN");
+                    appendSysLog("[안내] 선택된 파일이 없어 test0.mp4부터 순차 분석을 시작합니다.", "WARN");
                     currentPlaylistIndex = 0;
                     sampleVideoSelect.value = SAMPLE_PLAYLIST[0];
                     await loadVideoSource(SAMPLE_PLAYLIST[0], "test0.mp4");
@@ -509,66 +528,95 @@
                 prepCtx.drawImage(video, 0, 0, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE);
                 const imgData = prepCtx.getImageData(0, 0, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE).data;
                 
-                const inputBuffer = new Float32Array(3 * MODEL_INPUT_SIZE * MODEL_INPUT_SIZE);
-                for (let i = 0; i < MODEL_INPUT_SIZE * MODEL_INPUT_SIZE; i++) {
-                    inputBuffer[i] = imgData[i*4] / 255.0;                         
-                    inputBuffer[MODEL_INPUT_SIZE*MODEL_INPUT_SIZE + i] = imgData[i*4+1] / 255.0;     
-                    inputBuffer[MODEL_INPUT_SIZE*MODEL_INPUT_SIZE*2 + i] = imgData[i*4+2] / 255.0; 
+                const rOffset = 0;
+                const gOffset = PIXELS_COUNT;
+                const bOffset = PIXELS_COUNT * 2;
+                for (let i = 0; i < PIXELS_COUNT; i++) {
+                    const srcIdx = i * 4;
+                    preallocatedInputBuffer[rOffset + i] = imgData[srcIdx] / 255.0;                         
+                    preallocatedInputBuffer[gOffset + i] = imgData[srcIdx + 1] / 255.0;     
+                    preallocatedInputBuffer[bOffset + i] = imgData[srcIdx + 2] / 255.0; 
                 }
                 
-                const tensor = new ort.Tensor('float32', inputBuffer, [1, 3, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE]);
+                const tensor = new ort.Tensor('float32', preallocatedInputBuffer, [1, 3, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE]);
                 const output = await session.run({ [session.inputNames[0]]: tensor });
                 
                 const outputTensor = output[session.outputNames[0]];
                 const dims = outputTensor.dims;
                 const outputData = outputTensor.data;
-                
-                let numClassesAndBbox = dims[1]; 
-                let numAnchors = dims[2];        
-                let isTransposed = false;
-
-                if (dims[2] === 84 || dims[2] === 80 + 4) {
-                    numClassesAndBbox = dims[2];
-                    numAnchors = dims[1];
-                    isTransposed = true;
-                }
-
-                document.getElementById('metric-anchors').innerText = numAnchors;
                 const confThreshold = parseFloat(document.getElementById('conf-threshold').value);
-                const boxes = [];
-                const numClasses = numClassesAndBbox - 4;
-                
-                for (let i = 0; i < numAnchors; i++) {
-                    let maxScore = 0;
+
+                let parsedBoxes = [];
+
+                if ((dims.length === 3 && dims[2] === 6) || (dims.length === 2 && dims[1] === 6)) {
+                    metricNmsMode.innerText = "GPU E2E";
+                    metricNmsMode.className = "font-mono text-[11px] font-bold text-teal-300 glow-text";
                     
-                    if (isTransposed) {
-                        for(let c = 0; c < numClasses; c++) {
-                            let s = outputData[i * numClassesAndBbox + 4 + c];
-                            if(s > maxScore) maxScore = s;
-                        }
-                        if (maxScore > confThreshold) {
-                            let cx = outputData[i * numClassesAndBbox + 0]; 
-                            let cy = outputData[i * numClassesAndBbox + 1];
-                            let w  = outputData[i * numClassesAndBbox + 2]; 
-                            let h  = outputData[i * numClassesAndBbox + 3];
-                            boxes.push({ x1: cx - w/2, y1: cy - h/2, x2: cx + w/2, y2: cy + h/2, w, h, score: maxScore });
-                        }
-                    } else {
-                        for(let c = 0; c < numClasses; c++) {
-                            let s = outputData[(4 + c) * numAnchors + i];
-                            if(s > maxScore) maxScore = s;
-                        }
-                        if (maxScore > confThreshold) {
-                            let cx = outputData[0 * numAnchors + i]; 
-                            let cy = outputData[1 * numAnchors + i];
-                            let w  = outputData[2 * numAnchors + i]; 
-                            let h  = outputData[3 * numAnchors + i];
-                            boxes.push({ x1: cx - w/2, y1: cy - h/2, x2: cx + w/2, y2: cy + h/2, w, h, score: maxScore });
+                    const numDets = dims.length === 3 ? dims[1] : dims[0];
+                    for (let i = 0; i < numDets; i++) {
+                        const base = i * 6;
+                        const score = outputData[base + 4];
+                        if (score >= confThreshold) {
+                            const x1 = outputData[base + 0], y1 = outputData[base + 1];
+                            const x2 = outputData[base + 2], y2 = outputData[base + 3];
+                            parsedBoxes.push({
+                                x1: Math.min(x1, x2), y1: Math.min(y1, y2),
+                                x2: Math.max(x1, x2), y2: Math.max(y1, y2),
+                                w: Math.abs(x2 - x1), h: Math.abs(y2 - y1),
+                                score: score
+                            });
                         }
                     }
+                    lastDetections = parsedBoxes;
+
+                } else {
+                    metricNmsMode.innerText = "CPU Fallback";
+                    metricNmsMode.className = "font-mono text-[11px] font-bold text-amber-400";
+
+                    let numClassesAndBbox = dims[1]; 
+                    let numAnchors = dims[2];        
+                    let isTransposed = false;
+
+                    if (dims[2] === 84 || dims[2] === 80 + 4 || (dims[2] <= 10 && dims[1] > 100)) {
+                        numClassesAndBbox = dims[2];
+                        numAnchors = dims[1];
+                        isTransposed = true;
+                    }
+
+                    const numClasses = numClassesAndBbox - 4;
+                    const rawBoxes = [];
+                    
+                    for (let i = 0; i < numAnchors; i++) {
+                        let maxScore = 0;
+                        if (isTransposed) {
+                            for(let c = 0; c < numClasses; c++) {
+                                let s = outputData[i * numClassesAndBbox + 4 + c];
+                                if(s > maxScore) maxScore = s;
+                            }
+                            if (maxScore > confThreshold) {
+                                let cx = outputData[i * numClassesAndBbox + 0]; 
+                                let cy = outputData[i * numClassesAndBbox + 1];
+                                let w  = outputData[i * numClassesAndBbox + 2]; 
+                                let h  = outputData[i * numClassesAndBbox + 3];
+                                rawBoxes.push({ x1: cx - w/2, y1: cy - h/2, x2: cx + w/2, y2: cy + h/2, w, h, score: maxScore });
+                            }
+                        } else {
+                            for(let c = 0; c < numClasses; c++) {
+                                let s = outputData[(4 + c) * numAnchors + i];
+                                if(s > maxScore) maxScore = s;
+                            }
+                            if (maxScore > confThreshold) {
+                                let cx = outputData[0 * numAnchors + i]; 
+                                let cy = outputData[1 * numAnchors + i];
+                                let w  = outputData[2 * numAnchors + i]; 
+                                let h  = outputData[3 * numAnchors + i];
+                                rawBoxes.push({ x1: cx - w/2, y1: cy - h/2, x2: cx + w/2, y2: cy + h/2, w, h, score: maxScore });
+                            }
+                        }
+                    }
+                    lastDetections = applyNMS(rawBoxes, IOU_THRESHOLD);
                 }
-                
-                lastDetections = applyNMS(boxes, IOU_THRESHOLD);
+
                 const inferTime = performance.now() - startTime;
                 document.getElementById('metric-infer').innerText = `${inferTime.toFixed(0)} ms`;
                 document.getElementById('metric-birds').innerText = `${lastDetections.length} 개`;
@@ -584,7 +632,10 @@
 
         // --- 2. 실시간 렌더링 파이프라인 ---
         function renderPipeline() {
-            if (!isAnalyzing || video.paused) return;
+            if (!isAnalyzing || video.paused) {
+                hideAllAlertsImmediately(); // 분석 중이 아니면 무조건 경고 숨김
+                return;
+            }
 
             const now = performance.now();
             document.getElementById('metric-fps').innerText = Math.round(1000 / (now - lastRenderTime));
@@ -612,7 +663,7 @@
                     const rw = det.w * scaleX, rh = det.h * scaleY;
                     const rx = det.x1 * scaleX, ry = det.y1 * scaleY;
                     
-                    const distMeters = 500 * (100 / Math.max(rw, rh)) * (zoom / 15);
+                    const distMeters = 500 * (100 / Math.max(rw, rh, 1)) * (zoom / 15);
                     if (distMeters < frameMinDist) frameMinDist = distMeters;
 
                     let bearingDeg = 0;
@@ -632,7 +683,6 @@
                     
                     if (tLvl > frameMaxLevel) frameMaxLevel = tLvl;
 
-                    // 바운딩 박스 렌더링 (체크 시에만 그림)
                     if (showBbox) {
                         ctx.strokeStyle = tCol; 
                         ctx.lineWidth = 3; 
@@ -697,22 +747,53 @@
             }
         }
 
-        // --- 4. 레벨 3 테두리 점멸 & 레벨 4 전용 컴팩트 중앙 위험 알림 표시 ---
+        // --- 4. [요구사항 반영] 레벨 4 전용 경고 표시 및 3초 지연 숨김 로직 ---
         function updateVisualAlerts(currentLevel) {
-            // 초기화
-            videoContainer.classList.remove('border-alert-l3', 'border-alert-l4');
+            // 영상이 분석 중이 아니면 무조건 숨김
+            if (!isAnalyzing || video.paused) {
+                hideAllAlertsImmediately();
+                return;
+            }
 
-            if (currentLevel === 3) {
-                // 레벨 3: 테두리 주황색 점멸 (중앙 경고창 없음)
-                videoContainer.classList.add('border-alert-l3');
-                centerCriticalOverlay.style.display = 'none';
-            } else if (currentLevel === 4) {
-                // 레벨 4: 테두리 적색 점멸 + 컴팩트 중앙 삼각형 경고 표시
+            if (currentLevel === 4) {
+                // 레벨 4 정보 수신: 즉시 경고 표시 및 기존 타이머 취소
+                if (level4HideTimer) {
+                    clearTimeout(level4HideTimer);
+                    level4HideTimer = null;
+                }
+                isLevel4AlertActive = true;
                 videoContainer.classList.add('border-alert-l4');
+                videoContainer.classList.remove('border-alert-l3');
                 centerCriticalOverlay.style.display = 'flex';
+
             } else {
-                // 레벨 1, 2: 완전 비표시
-                centerCriticalOverlay.style.display = 'none';
+                // 레벨 4가 아닌 경우 (Level 1, 2, 3)
+                if (isLevel4AlertActive) {
+                    // 이전에 레벨 4였던 경우 3초 뒤에 표시를 숨김
+                    if (!level4HideTimer) {
+                        level4HideTimer = setTimeout(() => {
+                            isLevel4AlertActive = false;
+                            centerCriticalOverlay.style.display = 'none';
+                            videoContainer.classList.remove('border-alert-l4');
+                            level4HideTimer = null;
+
+                            // 3초 후 현재 레벨이 3이면 주황 테두리 적용
+                            if (globalRiskLevel === 3 && isAnalyzing && !video.paused) {
+                                videoContainer.classList.add('border-alert-l3');
+                            }
+                        }, 3000);
+                    }
+                } else {
+                    // 레벨 4가 완전히 비활성화된 상태
+                    centerCriticalOverlay.style.display = 'none';
+                    videoContainer.classList.remove('border-alert-l4');
+                    
+                    if (currentLevel === 3) {
+                        videoContainer.classList.add('border-alert-l3');
+                    } else {
+                        videoContainer.classList.remove('border-alert-l3');
+                    }
+                }
             }
         }
 
@@ -731,7 +812,7 @@
 
             graphCtx.clearRect(0, 0, w, h);
 
-            // 그리드 렌더링
+            // 그리드
             graphCtx.strokeStyle = "rgba(255,255,255,0.05)";
             graphCtx.lineWidth = 1;
             for(let i=1; i<=3; i++) {
