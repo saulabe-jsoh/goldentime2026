@@ -24,7 +24,7 @@
         video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; z-index: 10; pointer-events: none; }
         
-        /* Level 3 & Level 4 영상 외곽 점멸 테두리 효과 */
+        /* Level 3 테두리 주황 점멸 */
         .border-alert-l3 {
             border-color: #ff9800 !important;
             box-shadow: inset 0 0 20px rgba(255, 152, 0, 0.6), 0 0 15px rgba(255, 152, 0, 0.5) !important;
@@ -35,6 +35,7 @@
             100% { border-color: #ff9800; box-shadow: inset 0 0 25px rgba(255, 152, 0, 0.7), 0 0 20px rgba(255, 152, 0, 0.6); }
         }
 
+        /* Level 4 테두리 적색 강력 점멸 */
         .border-alert-l4 {
             border-color: #f44336 !important;
             box-shadow: inset 0 0 30px rgba(244, 67, 54, 0.8), 0 0 25px rgba(244, 67, 54, 0.7) !important;
@@ -45,11 +46,11 @@
             100% { border-color: #f44336; box-shadow: inset 0 0 35px rgba(244, 67, 54, 0.9), 0 0 30px rgba(244, 67, 54, 0.8); }
         }
 
-        /* Level 4 소형 중앙 위험 알림 컴팩트 박스 */
+        /* Level 4 전용 컴팩트 중앙 위험 알림 박스 (기본 숨김) */
         #center-critical-overlay {
             position: absolute;
             inset: 0;
-            display: flex;
+            display: none; /* 기본 상태 완전 숨김 */
             align-items: center;
             justify-content: center;
             pointer-events: none;
@@ -61,7 +62,7 @@
             100% { transform: scale(1.02); opacity: 1; }
         }
 
-        /* 레이더 UI 스타일 */
+        /* 레이더 UI */
         #radar-container { position: relative; width: 100%; aspect-ratio: 2/1; background: #001100; border-radius: 0.5rem; border: 1px solid #00ff00; overflow: hidden; }
         #radar-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 20; }
         .radar-scan { position: absolute; bottom: 0; left: 50%; width: 200%; height: 200%; background: conic-gradient(from 270deg at 50% 100%, rgba(0, 255, 0, 0) 0deg, rgba(0, 255, 0, 0) 60deg, rgba(0, 255, 0, 0.4) 130deg, rgba(0, 255, 0, 0.131deg)); transform-origin: 50% 100%; animation: scan 3s infinite linear; z-index: 10; pointer-events: none; transform: translateX(-50%); }
@@ -76,7 +77,7 @@
         .zone-l4 { width: 20%; background: rgba(244, 67, 54, 0.5); }  
         .gauge-marker { position: absolute; top: 0; height: 100%; width: 4px; background: #fff; box-shadow: 0 0 12px #fff, 0 0 8px #66fcf1; transition: left 0.1s linear; z-index: 10; }
         
-        /* 누적 시계열 그래프 */
+        /* 시계열 그래프 */
         #graph-container { position: relative; width: 100%; height: 100px; background: #0b0c10; border-radius: 0.5rem; border: 1px solid #1f2833; overflow: hidden; margin-top: 10px; }
         #graph-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
 
@@ -102,14 +103,15 @@
             </div>
 
             <!-- 컨트롤 설정 영역 -->
-            <div class="bg-[#1f2833] border border-slate-700 p-4 rounded-xl grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
+            <div class="bg-[#1f2833] border border-slate-700 p-4 rounded-xl grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
                 
-                <!-- 샘플 영상 선택기 -->
-                <div class="col-span-2">
+                <!-- 샘플 영상 선택기 (3 cols) -->
+                <div class="col-span-2 md:col-span-3">
                     <label class="block text-xs text-[#66fcf1] font-semibold mb-1">
                         <i class="fa-solid fa-film mr-1"></i>샘플 테스트 영상 (test0 ~ test8)
                     </label>
-                    <select id="sample-video-select" class="block w-full px-3 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none focus:border-[#66fcf1]">
+                    <select id="sample-video-select" class="block w-full px-3 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-xs text-white focus:outline-none focus:border-[#66fcf1]">
+                        <option value="">(선택 안함 - 분석 시작 시 순차 자동 시작)</option>
                         <option value="./test0.mp4">test0.mp4 (기본 종합 시나리오)</option>
                         <option value="./test1.mp4">test1.mp4 (실험 1: 3~7s 경고/치명 진입)</option>
                         <option value="./test2.mp4">test2.mp4 (실험 2: 급박 상황 1~2s 치명 직결)</option>
@@ -122,43 +124,49 @@
                     </select>
                 </div>
 
-                <!-- 직접 업로드 -->
-                <div class="col-span-2">
+                <!-- 직접 업로드 (3 cols) -->
+                <div class="col-span-2 md:col-span-3">
                     <label class="block text-xs text-slate-400 font-semibold mb-1">
                         <i class="fa-solid fa-upload mr-1"></i>직접 파일 업로드 (.mp4)
                     </label>
-                    <input type="file" id="video-upload" accept="video/mp4" class="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-slate-700 file:text-[#66fcf1] hover:file:bg-slate-600 bg-[#0b0c10] border border-slate-600 rounded-md">
+                    <input type="file" id="video-upload" accept="video/mp4" class="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-slate-700 file:text-[#66fcf1] hover:file:bg-slate-600 bg-[#0b0c10] border border-slate-600 rounded-md">
                 </div>
                 
-                <div>
-                    <label class="block text-xs text-slate-400 font-semibold mb-1">신뢰도 (Conf)</label>
-                    <select id="conf-threshold" class="block w-full px-3 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none">
-                        <option value="0.10">10% (민감)</option>
-                        <option value="0.25" selected>25% (권장)</option>
-                        <option value="0.40">40% (엄격)</option>
+                <div class="col-span-1 md:col-span-1">
+                    <label class="block text-[11px] text-slate-400 font-semibold mb-1">신뢰도</label>
+                    <select id="conf-threshold" class="block w-full px-2 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-xs text-white focus:outline-none">
+                        <option value="0.10">10%</option>
+                        <option value="0.25" selected>25%</option>
+                        <option value="0.40">40%</option>
                     </select>
                 </div>
-                <div>
-                    <label class="block text-xs text-[#66fcf1] font-semibold mb-1">운항 상태</label>
-                    <select id="flight-state" class="block w-full px-3 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none">
-                        <option value="CRUISE">순항 (127kts)</option>
+                <div class="col-span-1 md:col-span-1">
+                    <label class="block text-[11px] text-[#66fcf1] font-semibold mb-1">운항 상태</label>
+                    <select id="flight-state" class="block w-full px-2 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-xs text-white focus:outline-none">
+                        <option value="CRUISE">순항(127k)</option>
                         <option value="TAKEOFF">이착륙/호버링</option>
                     </select>
                 </div>
-                <div>
-                    <label class="block text-xs text-slate-400 font-semibold mb-1">광학 배율 (Zoom)</label>
-                    <select id="zoom-level" class="block w-full px-3 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-sm text-white focus:outline-none">
+                <div class="col-span-1 md:col-span-1">
+                    <label class="block text-[11px] text-slate-400 font-semibold mb-1">배율(Zoom)</label>
+                    <select id="zoom-level" class="block w-full px-2 py-2 bg-[#0b0c10] border border-slate-600 rounded-md text-xs text-white focus:outline-none">
                         <option value="1">1x</option><option value="5">5x</option>
                         <option value="15" selected>15x</option><option value="30">30x</option>
                     </select>
                 </div>
                 
-                <button id="btn-analyze" disabled class="col-span-1 px-4 py-2 bg-[#45a29e] hover:bg-[#66fcf1] text-[#0b0c10] text-sm font-bold rounded-md disabled:opacity-50 transition-colors shadow">
-                    분석 시작
+                <!-- 분석 시작 버튼 (2 cols) -->
+                <button id="btn-analyze" disabled class="col-span-1 md:col-span-2 px-3 py-2 bg-[#45a29e] hover:bg-[#66fcf1] text-[#0b0c10] text-xs md:text-sm font-bold rounded-md disabled:opacity-50 transition-colors shadow flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-play"></i><span>분석 시작</span>
+                </button>
+
+                <!-- 파일 초기화 버튼 (1 col) -->
+                <button id="btn-reset" class="col-span-1 md:col-span-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs md:text-sm font-bold rounded-md transition-colors shadow flex items-center justify-center gap-1.5 border border-slate-600">
+                    <i class="fa-solid fa-rotate-left"></i><span>초기화</span>
                 </button>
 
                 <!-- 토글 옵션 바 (바운딩 박스 기본값: 체크 해제) -->
-                <div class="col-span-2 md:col-span-4 flex flex-wrap gap-4 items-center justify-between bg-[#0b0c10] px-4 py-2.5 rounded-md border border-slate-600">
+                <div class="col-span-2 md:col-span-6 flex flex-wrap gap-4 items-center justify-between bg-[#0b0c10] px-4 py-2.5 rounded-md border border-slate-600 mt-1">
                     <div class="flex items-center">
                         <input type="checkbox" id="toggle-sequential" class="w-4 h-4 text-[#66fcf1] bg-slate-700 border-slate-600 rounded focus:ring-[#66fcf1]" checked>
                         <label for="toggle-sequential" class="ml-2 text-xs md:text-sm font-semibold text-teal-300 cursor-pointer">
@@ -167,7 +175,7 @@
                     </div>
 
                     <div class="flex items-center">
-                        <!-- 기본값: unchecked (바운딩 박스 표시 안함) -->
+                        <!-- 기본값: 체크 해제 -->
                         <input type="checkbox" id="toggle-bbox" class="w-4 h-4 text-[#66fcf1] bg-slate-700 border-slate-600 rounded focus:ring-[#66fcf1]">
                         <label for="toggle-bbox" class="ml-2 text-xs md:text-sm font-medium text-slate-300 cursor-pointer">
                             <i class="fa-solid fa-vector-square mr-1"></i>바운딩 박스(BBox) 표시
@@ -188,8 +196,8 @@
                 <video id="video" playsinline muted></video>
                 <canvas id="canvas"></canvas>
 
-                <!-- Level 4 전용 컴팩트 중앙 위험 알림 표시 (레벨 4일 때만 표시, 크기 축소) -->
-                <div id="center-critical-overlay" class="hidden">
+                <!-- Level 4 전용 컴팩트 중앙 위험 알림 표시 (기본 display: none) -->
+                <div id="center-critical-overlay">
                     <div class="bg-red-950/90 border border-red-500/80 px-4 py-2 rounded-lg flex items-center gap-3 backdrop-blur-sm shadow-xl">
                         <i class="fa-solid fa-triangle-exclamation text-2xl text-red-500 filter drop-shadow-[0_0_8px_#f44336]"></i>
                         <div class="flex flex-col">
@@ -272,7 +280,7 @@
             <div class="bg-[#1f2833] border border-slate-700 rounded-xl flex flex-col flex-grow overflow-hidden h-32">
                 <div class="p-2 border-b border-slate-800 bg-[#0b0c10] flex justify-between items-center">
                     <span class="text-[10px] font-bold text-slate-400">System Logs</span>
-                    <span id="current-video-tag" class="text-[10px] font-mono text-sky-400">Video: test0.mp4</span>
+                    <span id="current-video-tag" class="text-[10px] font-mono text-sky-400">Video: Standby</span>
                 </div>
                 <pre id="sys-log" class="p-2 overflow-y-auto log-panel text-[10px] font-mono text-slate-400 h-full leading-relaxed"></pre>
             </div>
@@ -313,8 +321,10 @@
         const graphCtx = graphCanvas.getContext('2d');
         
         const btnAnalyze = document.getElementById('btn-analyze');
+        const btnReset = document.getElementById('btn-reset');
         const sysLog = document.getElementById('sys-log');
         const sampleVideoSelect = document.getElementById('sample-video-select');
+        const videoUpload = document.getElementById('video-upload');
         const toggleSequential = document.getElementById('toggle-sequential');
         const toggleBbox = document.getElementById('toggle-bbox');
         const toggleBearing = document.getElementById('toggle-bearing');
@@ -354,9 +364,10 @@
                 
                 appendSysLog(`엔진 준비 완료! (${(totalLength/1024/1024).toFixed(1)}MB)`, "INFO");
                 document.getElementById('model-status').innerHTML = '<i class="fa-solid fa-check mr-1"></i>엔진 준비 완료';
-                document.getElementById('model-status').className = "px-4 py-2 bg-emerald-500/10 text-emerald-400 text-sm font-bold rounded-full";
+                document.getElementById('model-status').className = "px-4 py-2 bg-emerald-500/10 text-emerald-400 text-sm font-bold rounded-full flex items-center";
                 
-                loadSelectedSampleVideo();
+                // 엔진 준비 시 분석 시작 버튼 활성화
+                btnAnalyze.disabled = false;
             } catch (e) {
                 appendSysLog(`엔진 로드 실패: ${e.message}`, "ERROR");
                 document.getElementById('model-status').innerHTML = '로드 실패';
@@ -370,31 +381,31 @@
             currentVideoTag.innerText = `Video: ${displayName}`;
             appendSysLog(`영상 로드: ${displayName}`);
 
-            video.onloadeddata = () => {
-                canvas.width = video.videoWidth || 1280;
-                canvas.height = video.videoHeight || 720;
-                if (session) btnAnalyze.disabled = false;
-            };
-        }
-
-        function loadSelectedSampleVideo() {
-            const selectedVal = sampleVideoSelect.value;
-            currentPlaylistIndex = SAMPLE_PLAYLIST.indexOf(selectedVal);
-            if (currentPlaylistIndex === -1) currentPlaylistIndex = 0;
-            const displayName = selectedVal.split('/').pop();
-            loadVideoSource(selectedVal, displayName);
+            return new Promise((resolve) => {
+                video.onloadeddata = () => {
+                    canvas.width = video.videoWidth || 1280;
+                    canvas.height = video.videoHeight || 720;
+                    resolve();
+                };
+            });
         }
 
         sampleVideoSelect.addEventListener('change', () => {
-            loadSelectedSampleVideo();
-            if (isAnalyzing) {
-                video.play();
+            if (sampleVideoSelect.value) {
+                const selectedVal = sampleVideoSelect.value;
+                currentPlaylistIndex = SAMPLE_PLAYLIST.indexOf(selectedVal);
+                if (currentPlaylistIndex === -1) currentPlaylistIndex = 0;
+                const displayName = selectedVal.split('/').pop();
+                loadVideoSource(selectedVal, displayName).then(() => {
+                    if (isAnalyzing) video.play();
+                });
             }
         });
 
-        document.getElementById('video-upload').addEventListener('change', (e) => {
+        videoUpload.addEventListener('change', (e) => {
             if (e.target.files[0]) {
                 const file = e.target.files[0];
+                sampleVideoSelect.value = "";
                 video.src = URL.createObjectURL(file);
                 video.load();
                 currentVideoTag.innerText = `Custom: ${file.name}`;
@@ -402,7 +413,7 @@
                 video.onloadeddata = () => {
                     canvas.width = video.videoWidth || 1280;
                     canvas.height = video.videoHeight || 720;
-                    if (session) btnAnalyze.disabled = false;
+                    if (isAnalyzing) video.play();
                 };
             }
         });
@@ -414,42 +425,82 @@
                 const nextSrc = SAMPLE_PLAYLIST[currentPlaylistIndex];
                 sampleVideoSelect.value = nextSrc;
                 const displayName = nextSrc.split('/').pop();
-                appendSysLog(`[자동 순차 재생] 다음 영상 전환: ${displayName}`, "WARN");
-                loadVideoSource(nextSrc, displayName);
-                video.onloadeddata = () => {
-                    canvas.width = video.videoWidth || 1280;
-                    canvas.height = video.videoHeight || 720;
-                    if (isAnalyzing) {
-                        video.play();
-                    }
-                };
+                appendSysLog(`[자동 순차 재생] 다음 시나리오 전환: ${displayName}`, "WARN");
+                loadVideoSource(nextSrc, displayName).then(() => {
+                    if (isAnalyzing) video.play();
+                });
             } else {
                 appendSysLog("영상 재생 완료.");
             }
         });
 
+        // 파일 초기화 (Reset) 기능
+        function resetAll() {
+            isAnalyzing = false;
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+
+            videoUpload.value = '';
+            sampleVideoSelect.value = '';
+            currentPlaylistIndex = 0;
+
+            lastDetections = [];
+            globalRiskLevel = 1;
+            riskHistory = [];
+            
+            // 캔버스 초기화
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height);
+            graphCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
+
+            // UI 및 알림 초기화
+            updateVisualAlerts(1);
+            updateDecaySystem(1, 1000);
+            currentVideoTag.innerText = "Video: Standby";
+            document.getElementById('metric-infer').innerText = '0 ms';
+            document.getElementById('metric-fps').innerText = '0';
+            document.getElementById('metric-birds').innerText = '0 개';
+
+            btnAnalyze.innerHTML = '<i class="fa-solid fa-play"></i><span>분석 시작</span>';
+            btnAnalyze.className = "col-span-1 md:col-span-2 px-3 py-2 bg-[#45a29e] hover:bg-[#66fcf1] text-[#0b0c10] text-xs md:text-sm font-bold rounded-md disabled:opacity-50 transition-colors shadow flex items-center justify-center gap-1.5";
+            
+            appendSysLog("전체 상태 및 영상 초기화 완료.", "INFO");
+        }
+
+        btnReset.addEventListener('click', resetAll);
+
         toggleBearing.addEventListener('change', (e) => {
             document.getElementById('radar-disabled-overlay').classList.toggle('hidden', e.target.checked);
         });
 
-        btnAnalyze.addEventListener('click', () => {
+        // 분석 시작 버튼 클릭 (파일 없을 시 시나리오 0부터 순차 자동 시작)
+        btnAnalyze.addEventListener('click', async () => {
             if (isAnalyzing) {
                 isAnalyzing = false; 
                 video.pause();
-                btnAnalyze.textContent = "분석 시작";
-                btnAnalyze.className = "col-span-1 px-4 py-2 bg-[#45a29e] hover:bg-[#66fcf1] text-[#0b0c10] text-sm font-bold rounded-md transition-colors shadow";
+                btnAnalyze.innerHTML = '<i class="fa-solid fa-play"></i><span>분석 시작</span>';
+                btnAnalyze.className = "col-span-1 md:col-span-2 px-3 py-2 bg-[#45a29e] hover:bg-[#66fcf1] text-[#0b0c10] text-xs md:text-sm font-bold rounded-md transition-colors shadow flex items-center justify-center gap-1.5";
             } else {
+                // 영상 파일이 로드되어 있지 않거나 비어있는 경우 시나리오 0(test0.mp4) 자동 로드
+                if (!video.src || video.src === "" || video.src === window.location.href) {
+                    appendSysLog("[안내] 선택된 영상이 없어 test0.mp4 시나리오부터 순차 분석을 시작합니다.", "WARN");
+                    currentPlaylistIndex = 0;
+                    sampleVideoSelect.value = SAMPLE_PLAYLIST[0];
+                    await loadVideoSource(SAMPLE_PLAYLIST[0], "test0.mp4");
+                }
+
                 isAnalyzing = true; 
                 video.play();
-                btnAnalyze.textContent = "분석 중지";
-                btnAnalyze.className = "col-span-1 px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-bold rounded-md transition-colors shadow";
+                btnAnalyze.innerHTML = '<i class="fa-solid fa-stop"></i><span>분석 중지</span>';
+                btnAnalyze.className = "col-span-1 md:col-span-2 px-3 py-2 bg-red-600 hover:bg-red-500 text-white text-xs md:text-sm font-bold rounded-md transition-colors shadow flex items-center justify-center gap-1.5";
                 renderPipeline();
             }
         });
 
         // --- 1. 객체 감지 및 동적 텐서 파싱 비동기 추론 ---
         async function processFrameAsync() {
-            if (isProcessingFrame || !isAnalyzing || video.paused) return;
+            if (isProcessingFrame || !isAnalyzing || video.paused || !video.videoWidth) return;
             isProcessingFrame = true; 
 
             const startTime = performance.now();
@@ -650,15 +701,18 @@
         function updateVisualAlerts(currentLevel) {
             // 초기화
             videoContainer.classList.remove('border-alert-l3', 'border-alert-l4');
-            centerCriticalOverlay.classList.add('hidden');
 
             if (currentLevel === 3) {
-                // 레벨 3: 테두리 주황색 점멸 (중앙 경고 삼각형 없음)
+                // 레벨 3: 테두리 주황색 점멸 (중앙 경고창 없음)
                 videoContainer.classList.add('border-alert-l3');
+                centerCriticalOverlay.style.display = 'none';
             } else if (currentLevel === 4) {
                 // 레벨 4: 테두리 적색 점멸 + 컴팩트 중앙 삼각형 경고 표시
                 videoContainer.classList.add('border-alert-l4');
-                centerCriticalOverlay.classList.remove('hidden');
+                centerCriticalOverlay.style.display = 'flex';
+            } else {
+                // 레벨 1, 2: 완전 비표시
+                centerCriticalOverlay.style.display = 'none';
             }
         }
 
