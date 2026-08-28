@@ -27,46 +27,44 @@
         /* Level 3 & Level 4 영상 외곽 점멸 테두리 효과 */
         .border-alert-l3 {
             border-color: #ff9800 !important;
-            box-shadow: inset 0 0 25px rgba(255, 152, 0, 0.7), 0 0 20px rgba(255, 152, 0, 0.6) !important;
+            box-shadow: inset 0 0 20px rgba(255, 152, 0, 0.6), 0 0 15px rgba(255, 152, 0, 0.5) !important;
             animation: pulse-border-orange 1s infinite alternate ease-in-out;
         }
         @keyframes pulse-border-orange {
-            0% { border-color: rgba(255, 152, 0, 0.4); box-shadow: inset 0 0 10px rgba(255, 152, 0, 0.3); }
-            100% { border-color: #ff9800; box-shadow: inset 0 0 35px rgba(255, 152, 0, 0.8), 0 0 25px rgba(255, 152, 0, 0.6); }
+            0% { border-color: rgba(255, 152, 0, 0.4); box-shadow: inset 0 0 8px rgba(255, 152, 0, 0.3); }
+            100% { border-color: #ff9800; box-shadow: inset 0 0 25px rgba(255, 152, 0, 0.7), 0 0 20px rgba(255, 152, 0, 0.6); }
         }
 
         .border-alert-l4 {
             border-color: #f44336 !important;
-            box-shadow: inset 0 0 35px rgba(244, 67, 54, 0.8), 0 0 30px rgba(244, 67, 54, 0.8) !important;
+            box-shadow: inset 0 0 30px rgba(244, 67, 54, 0.8), 0 0 25px rgba(244, 67, 54, 0.7) !important;
             animation: pulse-border-red 0.5s infinite alternate ease-in-out;
         }
         @keyframes pulse-border-red {
-            0% { border-color: rgba(244, 67, 54, 0.4); box-shadow: inset 0 0 15px rgba(244, 67, 54, 0.4); }
-            100% { border-color: #f44336; box-shadow: inset 0 0 45px rgba(244, 67, 54, 0.9), 0 0 35px rgba(244, 67, 54, 0.8); }
+            0% { border-color: rgba(244, 67, 54, 0.4); box-shadow: inset 0 0 12px rgba(244, 67, 54, 0.4); }
+            100% { border-color: #f44336; box-shadow: inset 0 0 35px rgba(244, 67, 54, 0.9), 0 0 30px rgba(244, 67, 54, 0.8); }
         }
 
-        /* Level 4 중앙 경고 삼각형 오버레이 */
+        /* Level 4 소형 중앙 위험 알림 컴팩트 박스 */
         #center-critical-overlay {
             position: absolute;
             inset: 0;
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
             pointer-events: none;
             z-index: 25;
-            background: radial-gradient(circle, rgba(244, 67, 54, 0.25) 0%, transparent 75%);
-            animation: pulse-center 0.6s infinite alternate ease-in-out;
+            animation: pulse-compact 0.5s infinite alternate ease-in-out;
         }
-        @keyframes pulse-center {
-            0% { transform: scale(0.95); opacity: 0.8; }
-            100% { transform: scale(1.05); opacity: 1; }
+        @keyframes pulse-compact {
+            0% { transform: scale(0.96); opacity: 0.85; }
+            100% { transform: scale(1.02); opacity: 1; }
         }
 
         /* 레이더 UI 스타일 */
         #radar-container { position: relative; width: 100%; aspect-ratio: 2/1; background: #001100; border-radius: 0.5rem; border: 1px solid #00ff00; overflow: hidden; }
         #radar-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 20; }
-        .radar-scan { position: absolute; bottom: 0; left: 50%; width: 200%; height: 200%; background: conic-gradient(from 270deg at 50% 100%, rgba(0, 255, 0, 0) 0deg, rgba(0, 255, 0, 0) 60deg, rgba(0, 255, 0, 0.4) 130deg, rgba(0, 255, 0, 0) 131deg); transform-origin: 50% 100%; animation: scan 3s infinite linear; z-index: 10; pointer-events: none; transform: translateX(-50%); }
+        .radar-scan { position: absolute; bottom: 0; left: 50%; width: 200%; height: 200%; background: conic-gradient(from 270deg at 50% 100%, rgba(0, 255, 0, 0) 0deg, rgba(0, 255, 0, 0) 60deg, rgba(0, 255, 0, 0.4) 130deg, rgba(0, 255, 0, 0.131deg)); transform-origin: 50% 100%; animation: scan 3s infinite linear; z-index: 10; pointer-events: none; transform: translateX(-50%); }
         @keyframes scan { 0% { transform: translateX(-50%) rotate(-65deg); } 50% { transform: translateX(-50%) rotate(65deg); } 100% { transform: translateX(-50%) rotate(-65deg); } }
 
         /* 데미지 바 */
@@ -159,7 +157,7 @@
                     분석 시작
                 </button>
 
-                <!-- 토글 옵션 바 -->
+                <!-- 토글 옵션 바 (바운딩 박스 기본값: 체크 해제) -->
                 <div class="col-span-2 md:col-span-4 flex flex-wrap gap-4 items-center justify-between bg-[#0b0c10] px-4 py-2.5 rounded-md border border-slate-600">
                     <div class="flex items-center">
                         <input type="checkbox" id="toggle-sequential" class="w-4 h-4 text-[#66fcf1] bg-slate-700 border-slate-600 rounded focus:ring-[#66fcf1]" checked>
@@ -169,8 +167,9 @@
                     </div>
 
                     <div class="flex items-center">
-                        <input type="checkbox" id="toggle-bbox" class="w-4 h-4 text-[#66fcf1] bg-slate-700 border-slate-600 rounded focus:ring-[#66fcf1]" checked>
-                        <label for="toggle-bbox" class="ml-2 text-xs md:text-sm font-medium text-slate-200 cursor-pointer">
+                        <!-- 기본값: unchecked (바운딩 박스 표시 안함) -->
+                        <input type="checkbox" id="toggle-bbox" class="w-4 h-4 text-[#66fcf1] bg-slate-700 border-slate-600 rounded focus:ring-[#66fcf1]">
+                        <label for="toggle-bbox" class="ml-2 text-xs md:text-sm font-medium text-slate-300 cursor-pointer">
                             <i class="fa-solid fa-vector-square mr-1"></i>바운딩 박스(BBox) 표시
                         </label>
                     </div>
@@ -189,12 +188,14 @@
                 <video id="video" playsinline muted></video>
                 <canvas id="canvas"></canvas>
 
-                <!-- Level 4 전용 중앙 위험 알림 표시 (삼각형 느낌표) -->
+                <!-- Level 4 전용 컴팩트 중앙 위험 알림 표시 (레벨 4일 때만 표시, 크기 축소) -->
                 <div id="center-critical-overlay" class="hidden">
-                    <div class="bg-red-950/80 border-2 border-red-500 px-6 py-4 rounded-2xl flex flex-col items-center backdrop-blur-md shadow-2xl">
-                        <i class="fa-solid fa-triangle-exclamation text-6xl text-red-500 mb-2 filter drop-shadow-[0_0_15px_#f44336]"></i>
-                        <span class="text-2xl font-black text-white tracking-wider glow-text">CRITICAL COLLISION WARNING</span>
-                        <span class="text-xs font-bold text-red-300 mt-1 uppercase font-mono tracking-widest">즉각 회피 기동 (PULL UP / EVASIVE ACTION)</span>
+                    <div class="bg-red-950/90 border border-red-500/80 px-4 py-2 rounded-lg flex items-center gap-3 backdrop-blur-sm shadow-xl">
+                        <i class="fa-solid fa-triangle-exclamation text-2xl text-red-500 filter drop-shadow-[0_0_8px_#f44336]"></i>
+                        <div class="flex flex-col">
+                            <span class="text-sm font-black text-white tracking-wider glow-text leading-tight">CRITICAL WARNING</span>
+                            <span class="text-[10px] font-bold text-red-300 font-mono tracking-wider">EVASIVE ACTION REQUIRED</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -355,7 +356,6 @@
                 document.getElementById('model-status').innerHTML = '<i class="fa-solid fa-check mr-1"></i>엔진 준비 완료';
                 document.getElementById('model-status').className = "px-4 py-2 bg-emerald-500/10 text-emerald-400 text-sm font-bold rounded-full";
                 
-                // 기본 영상 로드
                 loadSelectedSampleVideo();
             } catch (e) {
                 appendSysLog(`엔진 로드 실패: ${e.message}`, "ERROR");
@@ -646,17 +646,17 @@
             }
         }
 
-        // --- 4. 레벨 3 테두리 깜빡임 & 레벨 4 중앙 삼각형 경고 표시 ---
+        // --- 4. 레벨 3 테두리 점멸 & 레벨 4 전용 컴팩트 중앙 위험 알림 표시 ---
         function updateVisualAlerts(currentLevel) {
             // 초기화
             videoContainer.classList.remove('border-alert-l3', 'border-alert-l4');
             centerCriticalOverlay.classList.add('hidden');
 
             if (currentLevel === 3) {
-                // 레벨 3: 테두리 주황색 점멸
+                // 레벨 3: 테두리 주황색 점멸 (중앙 경고 삼각형 없음)
                 videoContainer.classList.add('border-alert-l3');
             } else if (currentLevel === 4) {
-                // 레벨 4: 테두리 적색 강력 점멸 + 중앙 삼각형 느낌표 표시
+                // 레벨 4: 테두리 적색 점멸 + 컴팩트 중앙 삼각형 경고 표시
                 videoContainer.classList.add('border-alert-l4');
                 centerCriticalOverlay.classList.remove('hidden');
             }
