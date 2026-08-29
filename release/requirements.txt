@@ -1,0 +1,15 @@
+# Core Computer Vision & Array Processing
+numpy>=1.23.5
+opencv-python>=4.8.0.76
+
+# High-Performance ONNX Inference Engine (CPU default)
+onnxruntime>=1.16.0
+
+# Optional: For GPU acceleration with CUDA/TensorRT, replace onnxruntime with:
+# onnxruntime-gpu>=1.16.0
+
+# GUI Dependency Note:
+# tkinter is usually bundled with standard Python distributions on Windows/macOS.
+# On Ubuntu/Debian Linux, install via: sudo apt-get install python3-tk
+
+tkinter
